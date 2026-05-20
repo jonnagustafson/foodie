@@ -28,5 +28,10 @@ Do not add logging beyond what exists in utils/logger.py.
 
 # Project structure
 /
+├── core
+├── data
+├── integrations
+├── tests
+├── app.py
 ├── CLAUDE.md
 └── README.md
