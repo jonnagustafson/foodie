@@ -104,17 +104,27 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
     return receipt_id
 
 
+def _load_csv(
+    path: Path,
+    fields: list[str],
+    str_cols: list[str] | None = None,
+) -> pd.DataFrame:
+    """Read a CSV file, returning an empty DataFrame if absent or header-only."""
+    if not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame(columns=fields)
+    dtype = {col: str for col in (str_cols or [])}
+    return pd.read_csv(path, dtype=dtype or None)
+
+
 def load_receipts() -> pd.DataFrame:
     """Load all receipts from CSV.
 
     Returns:
         DataFrame with receipt data, empty if none exist.
     """
-    ensure_data_dir()
-    if _RECEIPTS_CSV.stat().st_size == 0:
-        return pd.DataFrame(columns=_RECEIPT_FIELDS)
-    df = pd.read_csv(_RECEIPTS_CSV, dtype=str)
-    df["total"] = pd.to_numeric(df["total"], errors="coerce").fillna(0.0)
+    df = _load_csv(_RECEIPTS_CSV, _RECEIPT_FIELDS, str_cols=list(_RECEIPT_FIELDS))
+    if not df.empty:
+        df["total"] = pd.to_numeric(df["total"], errors="coerce").fillna(0.0)
     return df
 
 
@@ -124,13 +134,12 @@ def load_items() -> pd.DataFrame:
     Returns:
         DataFrame with item data, empty if none exist.
     """
-    ensure_data_dir()
-    if _ITEMS_CSV.stat().st_size == 0:
-        return pd.DataFrame(columns=_ITEM_FIELDS)
-    df = pd.read_csv(
-        _ITEMS_CSV,
-        dtype={"name": str, "category": str, "date": str, "deal_name": str},
+    df = _load_csv(
+        _ITEMS_CSV, _ITEM_FIELDS,
+        str_cols=["name", "category", "date", "deal_name"],
     )
+    if df.empty:
+        return df
     df["price"] = pd.to_numeric(df["price"], errors="coerce").fillna(0.0)
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(1.0)
     # Back-fill columns added after initial release so old CSV files still load.
@@ -149,11 +158,9 @@ def load_savings() -> pd.DataFrame:
     Returns:
         DataFrame with savings data, empty if none exist.
     """
-    ensure_data_dir()
-    if _SAVINGS_CSV.stat().st_size == 0:
-        return pd.DataFrame(columns=_SAVINGS_FIELDS)
-    df = pd.read_csv(_SAVINGS_CSV, dtype={"name": str, "date": str})
-    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+    df = _load_csv(_SAVINGS_CSV, _SAVINGS_FIELDS, str_cols=["name", "date"])
+    if not df.empty:
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     return df
 
 
@@ -189,10 +196,10 @@ def receipt_already_saved(filename: str) -> bool:
     Returns:
         True if a receipt with this filename exists in storage.
     """
-    receipts = load_receipts()
-    if receipts.empty:
+    if not _RECEIPTS_CSV.exists() or _RECEIPTS_CSV.stat().st_size == 0:
         return False
-    return filename in receipts["filename"].values
+    filenames = pd.read_csv(_RECEIPTS_CSV, usecols=["filename"], dtype=str)["filename"]
+    return filename in filenames.values
 
 
 def _ensure_csv(path: Path, fields: list[str]) -> None:
