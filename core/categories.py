@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 # Category order matters — first match wins.
 # Ordering rules:
 #   - Mejeri before Dryck: "mjölk" must match before "öl" (removed) causes issues.
@@ -58,9 +60,10 @@ _CATEGORY_KEYWORDS: dict[str, list[str]] = {
     ],
     "Bröd & Bakverk": [
         # "kaka" excluded — ambiguous substring in "chokladkaka", "havrekaka"
+        # "kex" excluded — already matched by Snacks & Godis (first-match wins)
         "bröd", "knäckebröd", "bulle", "croissant", "bagel",
         "pita", "tortilla", "levain", "rieska", "fralla", "limpa",
-        "wienerbröd", "muffin", "kex", "ciabatta", "focaccia",
+        "wienerbröd", "muffin", "ciabatta", "focaccia",
     ],
     "Skafferi": [
         "havre", "müsli", "granola", "cornflakes", "flingor", "gryn",
@@ -68,12 +71,12 @@ _CATEGORY_KEYWORDS: dict[str, list[str]] = {
         "konserv", "sås", "olja", "olivolja", "socker", "salt", "krydda",
         "senap", "ketchup", "majonäs", "vinäger", "buljong", "tomatsås",
         "honung", "sylt", "marmelad", "mandel", "cashew", "nötter",
-        "kikärtor", "linser", "bambu", "bön", "gemelli", "fusilli", "penne", 
+        "kikärtor", "linser", "bambu", "bön", "gemelli", "fusilli", "penne",
         "spaghetti", "tagliatelle", "farfalle", "orzo", "risoni", "canneloni",
         "gnocchi", "lasagneplattor", "tortellini", "ravioli", "linguine", "tapenade", "pesto",
         "oliv", "krossade tomater", "kokosmjölk", "soja", "teriyakisås", "sriracha",
-        "Gochujang", "harissa", "chipotlesås", "sambal oelek", "wasabi", "miso",
-        "salt", "peppar", "paprikapulver", "curry", "kanel",
+        "gochujang", "harissa", "chipotlesås", "sambal oelek", "wasabi", "miso",
+        "peppar", "paprikapulver", "curry", "kanel",
     ],
     "Fryst": [
         "fryst", "glass", "frysta",
@@ -88,9 +91,25 @@ _CATEGORY_KEYWORDS: dict[str, list[str]] = {
 
 UNCATEGORIZED = "Övrigt"
 
+# Precompiled per-category patterns. Keywords are sorted longest-first within each
+# alternation so that more specific terms match before shorter ones.
+# Word-boundary anchors were considered but ruled out: Swedish compound nouns are
+# written without spaces (e.g. "Mellanmjölk", "Apelsinjuice"), so a left-boundary
+# lookbehind would silently reject valid matches.
+_CATEGORY_PATTERNS: dict[str, re.Pattern[str]] = {
+    category: re.compile(
+        "|".join(re.escape(kw) for kw in sorted(keywords, key=len, reverse=True)),
+        re.IGNORECASE,
+    )
+    for category, keywords in _CATEGORY_KEYWORDS.items()
+}
+
 
 def categorize_item(name: str) -> str:
     """Categorize a grocery item by name using substring keyword matching.
+
+    Uses precompiled patterns (longest keyword first) for performance. Category
+    order in _CATEGORY_KEYWORDS determines priority when multiple categories match.
 
     Args:
         name: The item name from the receipt.
@@ -98,9 +117,8 @@ def categorize_item(name: str) -> str:
     Returns:
         The category name, or 'Övrigt' if no match is found.
     """
-    lower = name.lower()
-    for category, keywords in _CATEGORY_KEYWORDS.items():
-        if any(kw in lower for kw in keywords):
+    for category, pattern in _CATEGORY_PATTERNS.items():
+        if pattern.search(name):
             return category
     return UNCATEGORIZED
 
