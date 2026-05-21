@@ -190,9 +190,9 @@ def _extract_items(
 
         if pre_price.endswith("-"):
             # Standalone negative line → cart-level saving (not a product).
-            amount = -price
-            name = pre_price[:-1].strip()
-            if name and any(c.isalpha() for c in name) and amount < 0:
+            result = _parse_negative_line(line)
+            if result is not None:
+                name, amount = result
                 savings.append({"name": name, "amount": amount})
             i += 1
             continue
@@ -238,8 +238,13 @@ def _extract_items(
     return items, savings
 
 
-def _try_parse_deal(line: str) -> dict[str, Any] | None:
-    """Return a deal dict if the line is a negative-price club-card discount, else None."""
+def _parse_negative_line(line: str) -> tuple[str, float] | None:
+    """Parse a negative-price line, returning (name, negative_amount) or None.
+
+    A negative line has the form "<name>- <price>" where the trailing dash
+    signals a discount. Used by both the standalone-savings branch in
+    _extract_items and the club-deal detection in _try_parse_deal.
+    """
     if _should_skip(line):
         return None
     price_match = _PRICE_RE.search(line)
@@ -248,10 +253,21 @@ def _try_parse_deal(line: str) -> dict[str, Any] | None:
     pre_price = line[: price_match.start()].rstrip()
     if not pre_price.endswith("-"):
         return None
-    discount = -_parse_price(price_match.group(1))
     name = pre_price[:-1].strip()
-    if not name or not any(c.isalpha() for c in name) or discount >= 0:
+    if not name or not any(c.isalpha() for c in name):
         return None
+    amount = -_parse_price(price_match.group(1))
+    if amount >= 0:
+        return None
+    return name, amount
+
+
+def _try_parse_deal(line: str) -> dict[str, Any] | None:
+    """Return a deal dict if the line is a negative-price club-card discount, else None."""
+    result = _parse_negative_line(line)
+    if result is None:
+        return None
+    name, discount = result
     return {"name": name, "discount": discount}
 
 

@@ -103,6 +103,15 @@ def main() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared UI helpers
+# ---------------------------------------------------------------------------
+
+
+def _category_select_column() -> st.column_config.SelectboxColumn:
+    return st.column_config.SelectboxColumn("Kategori", options=all_categories(), required=True)
+
+
+# ---------------------------------------------------------------------------
 # Upload page
 # ---------------------------------------------------------------------------
 
@@ -163,11 +172,7 @@ def _render_upload_page() -> None:
             "Vara": st.column_config.TextColumn("Vara", disabled=True),
             "Antal": st.column_config.NumberColumn("Antal", disabled=True),
             "Pris (kr)": st.column_config.NumberColumn("Pris (kr)", disabled=True),
-            "Kategori": st.column_config.SelectboxColumn(
-                "Kategori",
-                options=all_categories(),
-                required=True,
-            ),
+            "Kategori": _category_select_column(),
         },
         use_container_width=True,
         hide_index=True,
@@ -295,11 +300,7 @@ def _render_dashboard_page() -> None:
             column_config={
                 "Datum": st.column_config.TextColumn("Datum", disabled=True),
                 "Vara": st.column_config.TextColumn("Vara", disabled=True),
-                "Kategori": st.column_config.SelectboxColumn(
-                    "Kategori",
-                    options=all_categories(),
-                    required=True,
-                ),
+                "Kategori": _category_select_column(),
             },
             use_container_width=True,
             hide_index=True,
