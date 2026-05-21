@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from integrations.pdf_parser import (
@@ -15,11 +13,11 @@ from integrations.pdf_parser import (
     _should_skip,
     parse_ica_receipt,
 )
+from tests.conftest import REAL_RECEIPT_PATH
 
-_REAL_RECEIPT = (
-    Path(__file__).parent
-    / "data"
-    / "ICA Kvantum Malmborgs Caroli 530,03 kr 2026-04-27.pdf"
+_real_receipt_available = pytest.mark.skipif(
+    not REAL_RECEIPT_PATH.exists(),
+    reason="Real ICA receipt PDF not present in tests/data/",
 )
 
 
@@ -165,25 +163,26 @@ class TestExtractItems:
         assert items == []
 
 
+@_real_receipt_available
 class TestParseIcaReceiptRealFile:
     def test_date(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         assert result["date"] == "2026-04-27"
 
     def test_store(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         assert result["store"] == "ICA Kvantum Malmborgs Caroli"
 
     def test_total(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         assert result["total"] == pytest.approx(530.03)
 
     def test_item_count(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         assert len(result["items"]) == 19
 
     def test_items_have_required_keys(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         for item in result["items"]:
             assert "name" in item
             assert "price" in item
@@ -191,7 +190,7 @@ class TestParseIcaReceiptRealFile:
             assert "deal" in item
 
     def test_item_names_are_clean(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         for item in result["items"]:
             assert not item["name"].startswith("*")
             # No embedded article number (7+ digit code)
@@ -201,17 +200,17 @@ class TestParseIcaReceiptRealFile:
             )
 
     def test_known_item_present(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         names = [item["name"] for item in result["items"]]
         assert "Broccoli" in names
 
     def test_items_with_deals(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         deals = [item for item in result["items"] if item["deal"] is not None]
         assert len(deals) == 4
 
     def test_deal_structure(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         deals = [item for item in result["items"] if item["deal"] is not None]
         for item in deals:
             assert "name" in item["deal"]
@@ -219,25 +218,25 @@ class TestParseIcaReceiptRealFile:
             assert item["deal"]["discount"] < 0
 
     def test_no_asterisk_in_item_names(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         for item in result["items"]:
             assert "*" not in item["name"]
 
     def test_savings_list(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         assert len(result["savings"]) == 1
         assert result["savings"][0]["name"] == "Storköpsrabatt"
         assert result["savings"][0]["amount"] == pytest.approx(-27.90)
 
     def test_savings_have_required_keys(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         for s in result["savings"]:
             assert "name" in s
             assert "amount" in s
             assert s["amount"] < 0
 
     def test_item_sum_matches_total(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         item_sum = sum(
             item["price"] * item["quantity"] + (item["deal"]["discount"] if item["deal"] else 0)
             for item in result["items"]
@@ -247,19 +246,19 @@ class TestParseIcaReceiptRealFile:
 
     @pytest.mark.parametrize("bad_name", ["poäng", "rabatt", "Betalat", "Köp", "6,00 25,40 423,", "25,00 16,30 65,"])
     def test_payment_and_vat_lines_excluded(self, bad_name: str) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         names = [item["name"] for item in result["items"]]
         assert not any(bad_name in name for name in names)
 
     def test_deal_lines_not_separate_items(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         names = [item["name"] for item in result["items"]]
         assert not any("Vegankorv" in name for name in names)
         assert not any("2f28kr" in name for name in names)
         assert not any("2f25kr" in name for name in names)
 
     def test_storkoepsrabatt_not_an_item(self) -> None:
-        result = parse_ica_receipt(_REAL_RECEIPT)
+        result = parse_ica_receipt(REAL_RECEIPT_PATH)
         names = [item["name"] for item in result["items"]]
         assert not any("Storköpsrabatt" in name for name in names)
 
