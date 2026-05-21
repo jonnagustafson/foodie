@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -116,26 +117,18 @@ def _category_select_column() -> st.column_config.SelectboxColumn:
 # ---------------------------------------------------------------------------
 
 
-def _render_upload_page() -> None:
-    st.title("Ladda upp kvitto")
-    st.write(
-        "Ladda upp ett PDF-kvitto från ICA-appen eller ICAs webb för att spara det i din historik."
-    )
+_MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 
-    _MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
 
-    uploaded = st.file_uploader("Välj PDF-kvitto", type=["pdf"])
-    if uploaded is None:
-        return
+def _parse_uploaded_file(uploaded: Any) -> dict[str, Any] | None:
+    """Write the upload to a temp file, parse it, and enrich items with categories.
 
-    if uploaded.size > _MAX_PDF_BYTES:
-        st.error("Filen är för stor (max 20 MB).")
-        return
+    Args:
+        uploaded: Streamlit UploadedFile object.
 
-    if receipt_already_saved(uploaded.name):
-        st.warning(f"Kvittot **{uploaded.name}** är redan sparat.")
-        return
-
+    Returns:
+        Parsed receipt dict with category-enriched items, or None on failure.
+    """
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(uploaded.read())
         tmp_path = tmp.name
@@ -144,14 +137,25 @@ def _render_upload_page() -> None:
         parsed = parse_ica_receipt(tmp_path)
     except Exception:
         st.error("Kunde inte läsa kvittot. Kontrollera att det är ett digitalt ICA-kvitto i PDF-format.")
-        return
+        return None
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
-    # Enrich items with categories (business logic layer)
     for item in parsed["items"]:
         item["category"] = categorize_item(item["name"])
 
+    return parsed
+
+
+def _render_receipt_preview(parsed: dict[str, Any]) -> pd.DataFrame:
+    """Render the receipt preview section and return the edited items DataFrame.
+
+    Args:
+        parsed: Parsed receipt dict (output of _parse_uploaded_file).
+
+    Returns:
+        DataFrame reflecting any category edits made by the user.
+    """
     st.subheader("Förhandsgranskning")
     col1, col2, col3 = st.columns(3)
     col1.metric("Datum", parsed["date"])
@@ -185,6 +189,33 @@ def _render_upload_page() -> None:
             columns={"name": "Rabatt", "amount": "Belopp (kr)"}
         )
         st.dataframe(savings_df, use_container_width=True, hide_index=True)
+
+    return edited_df
+
+
+def _render_upload_page() -> None:
+    st.title("Ladda upp kvitto")
+    st.write(
+        "Ladda upp ett PDF-kvitto från ICA-appen eller ICAs webb för att spara det i din historik."
+    )
+
+    uploaded = st.file_uploader("Välj PDF-kvitto", type=["pdf"])
+    if uploaded is None:
+        return
+
+    if uploaded.size > _MAX_PDF_BYTES:
+        st.error("Filen är för stor (max 20 MB).")
+        return
+
+    if receipt_already_saved(uploaded.name):
+        st.warning(f"Kvittot **{uploaded.name}** är redan sparat.")
+        return
+
+    parsed = _parse_uploaded_file(uploaded)
+    if parsed is None:
+        return
+
+    edited_df = _render_receipt_preview(parsed)
 
     if st.button("Spara kvitto", type="primary"):
         for i, item in enumerate(parsed["items"]):
