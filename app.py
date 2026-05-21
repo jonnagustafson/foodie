@@ -26,6 +26,7 @@ from integrations.pdf_parser import parse_ica_receipt
 from integrations.storage import (
     load_items,
     load_receipts,
+    load_savings,
     receipt_already_saved,
     save_receipt,
     update_item_category,
@@ -173,6 +174,13 @@ def _render_upload_page() -> None:
         key="upload_category_editor",
     )
 
+    if parsed.get("savings"):
+        st.caption("Rabatter på kvittot")
+        savings_df = pd.DataFrame(parsed["savings"])[["name", "amount"]].rename(
+            columns={"name": "Rabatt", "amount": "Belopp (kr)"}
+        )
+        st.dataframe(savings_df, use_container_width=True, hide_index=True)
+
     if st.button("Spara kvitto", type="primary"):
         for i, item in enumerate(parsed["items"]):
             item["category"] = edited_df.iloc[i]["Kategori"]
@@ -191,6 +199,7 @@ def _render_dashboard_page() -> None:
 
     items_df = load_items()
     receipts_df = load_receipts()
+    savings_df = load_savings()
 
     if items_df.empty:
         st.info(
@@ -214,10 +223,16 @@ def _render_dashboard_page() -> None:
 
     # --- Summary metrics ---
     metrics = compute_summary_metrics(filtered)
-    col1, col2, col3 = st.columns(3)
+    filtered_savings = savings_df[
+        (savings_df["date"] >= start_date) & (savings_df["date"] <= end_date)
+    ] if not savings_df.empty else savings_df
+    total_savings = filtered_savings["amount"].sum() if not filtered_savings.empty else 0.0
+
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total utgift", f"{metrics['total_spent']:.0f} kr")
-    col2.metric("Antal kvitton", metrics["num_receipts"])
-    col3.metric("Artikelrader", metrics["num_items"])
+    col2.metric("Totalt sparat", f"{abs(total_savings):.0f} kr")
+    col3.metric("Antal kvitton", metrics["num_receipts"])
+    col4.metric("Artikelrader", metrics["num_items"])
 
     st.divider()
 

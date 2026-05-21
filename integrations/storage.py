@@ -15,9 +15,14 @@ from core.categories import all_categories
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _RECEIPTS_CSV = _DATA_DIR / "receipts.csv"
 _ITEMS_CSV = _DATA_DIR / "items.csv"
+_SAVINGS_CSV = _DATA_DIR / "savings.csv"
 
 _RECEIPT_FIELDS = ["receipt_id", "date", "store", "total", "filename"]
-_ITEM_FIELDS = ["id", "receipt_id", "date", "name", "price", "quantity", "category"]
+_ITEM_FIELDS = [
+    "id", "receipt_id", "date", "name", "price", "quantity", "category",
+    "deal_name", "deal_discount",
+]
+_SAVINGS_FIELDS = ["id", "receipt_id", "date", "name", "amount"]
 
 
 _CSV_INJECT_RE = re.compile(r"^[=+\-@\t\r]")
@@ -33,6 +38,7 @@ def ensure_data_dir() -> None:
     _DATA_DIR.mkdir(exist_ok=True)
     _ensure_csv(_RECEIPTS_CSV, _RECEIPT_FIELDS)
     _ensure_csv(_ITEMS_CSV, _ITEM_FIELDS)
+    _ensure_csv(_SAVINGS_CSV, _SAVINGS_FIELDS)
 
 
 def save_receipt(parsed: dict[str, Any], filename: str) -> str:
@@ -67,6 +73,7 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
     with _ITEMS_CSV.open("a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=_ITEM_FIELDS)
         for item in parsed["items"]:
+            deal = item.get("deal") or {}
             writer.writerow(
                 {
                     "id": uuid.uuid4().hex[:8],
@@ -76,6 +83,21 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
                     "price": item["price"],
                     "quantity": item["quantity"],
                     "category": _sanitize(item.get("category", "Övrigt")),
+                    "deal_name": _sanitize(deal.get("name", "")),
+                    "deal_discount": deal.get("discount", ""),
+                }
+            )
+
+    with _SAVINGS_CSV.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_SAVINGS_FIELDS)
+        for saving in parsed.get("savings", []):
+            writer.writerow(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "receipt_id": receipt_id,
+                    "date": parsed["date"],
+                    "name": _sanitize(saving["name"]),
+                    "amount": saving["amount"],
                 }
             )
 
@@ -105,9 +127,33 @@ def load_items() -> pd.DataFrame:
     ensure_data_dir()
     if _ITEMS_CSV.stat().st_size == 0:
         return pd.DataFrame(columns=_ITEM_FIELDS)
-    df = pd.read_csv(_ITEMS_CSV, dtype={"name": str, "category": str, "date": str})
+    df = pd.read_csv(
+        _ITEMS_CSV,
+        dtype={"name": str, "category": str, "date": str, "deal_name": str},
+    )
     df["price"] = pd.to_numeric(df["price"], errors="coerce").fillna(0.0)
     df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(1.0)
+    # Back-fill columns added after initial release so old CSV files still load.
+    if "deal_name" not in df.columns:
+        df["deal_name"] = ""
+    if "deal_discount" not in df.columns:
+        df["deal_discount"] = 0.0
+    df["deal_name"] = df["deal_name"].fillna("")
+    df["deal_discount"] = pd.to_numeric(df["deal_discount"], errors="coerce").fillna(0.0)
+    return df
+
+
+def load_savings() -> pd.DataFrame:
+    """Load all cart-level savings from CSV.
+
+    Returns:
+        DataFrame with savings data, empty if none exist.
+    """
+    ensure_data_dir()
+    if _SAVINGS_CSV.stat().st_size == 0:
+        return pd.DataFrame(columns=_SAVINGS_FIELDS)
+    df = pd.read_csv(_SAVINGS_CSV, dtype={"name": str, "date": str})
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     return df
 
 
