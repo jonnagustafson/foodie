@@ -15,40 +15,49 @@ from typing import Any
 import pdfplumber
 
 
-# Lines whose lowercase content contains these tokens are skipped entirely.
-_SKIP_TOKENS: frozenset[str] = frozenset(
-    [
-        "summa",
-        "att betala",
-        "totalt",
-        "moms",
-        "betalsätt",
-        "betalning",
-        "kort",
-        "visa",
-        "mastercard",
-        "maestro",
-        "kontant",
-        "swish",
-        "kassakvitto",
-        "kvitto nr",
-        "org.nr",
-        "org nr",
-        "tel:",
-        "telefon",
-        "välkommen",
-        "tack för",
-        "öppet",
-        "kundvagn",
-        "handla",
-        "erhållen rabatt",
-        "stamkund",
-        "klubbkort",
-        "pant",
-        "retur",
-        "betalat",
-        "köp",
-    ]
+# Single precompiled pattern matching any header/footer/summary token.
+# Tokens are sorted longest-first so longer phrases take priority over their substrings.
+_SKIP_RE: re.Pattern[str] = re.compile(
+    "|".join(
+        r"(?<!\w)" + re.escape(token)
+        for token in sorted(
+            [
+                "summa",
+                "att betala",
+                "totalt",
+                "moms",
+                "betalsätt",
+                "betalning",
+                "kort",
+                "visa",
+                "mastercard",
+                "maestro",
+                "kontant",
+                "swish",
+                "kassakvitto",
+                "kvitto nr",
+                "org.nr",
+                "org nr",
+                "tel:",
+                "telefon",
+                "välkommen",
+                "tack för",
+                "öppet",
+                "kundvagn",
+                "handla",
+                "erhållen rabatt",
+                "stamkund",
+                "klubbkort",
+                "pant",
+                "retur",
+                "betalat",
+                "köp",
+            ],
+            key=len,
+            reverse=True,
+        )
+    ),
+    re.IGNORECASE,
 )
 
 # Rightmost Swedish price on a line: optional leading digits+space, comma, two decimals.
@@ -299,10 +308,7 @@ def _clean_name(name: str) -> str:
 
 def _should_skip(line: str) -> bool:
     """Return True if the line is a header, footer, or summary line."""
-    lower = line.lower()
-    return any(
-        re.search(r"(?<!\w)" + re.escape(token), lower) for token in _SKIP_TOKENS
-    )
+    return bool(_SKIP_RE.search(line.lower()))
 
 
 def _parse_price(price_str: str) -> float:
