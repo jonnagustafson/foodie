@@ -77,7 +77,7 @@ def _render_upload_page() -> None:
 
     try:
         parsed = parse_ica_receipt(tmp_path)
-    except (ValueError, Exception) as exc:
+    except Exception as exc:
         st.error(f"Kunde inte läsa kvittot: {exc}")
         return
     finally:
