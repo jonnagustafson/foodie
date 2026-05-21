@@ -6,12 +6,14 @@ over time. Receipts are parsed locally; no external services are required.
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit_authenticator as stauth
 
 from core.analyzer import (
     compute_monthly_summary,
@@ -30,6 +32,29 @@ from integrations.storage import (
 )
 
 
+def _build_authenticator() -> stauth.Authenticate | None:
+    """Return an Authenticate instance if auth env vars are configured, else None."""
+    username = os.environ.get("AUTH_USERNAME", "")
+    if not username:
+        return None
+    credentials: dict = {
+        "usernames": {
+            username: {
+                "name": os.environ.get("AUTH_NAME", username),
+                "password": os.environ.get("AUTH_PASSWORD_HASH", ""),
+                "logged_in": False,
+            }
+        }
+    }
+    return stauth.Authenticate(
+        credentials,
+        cookie_name=os.environ.get("AUTH_COOKIE_NAME", "foodie_auth"),
+        cookie_key=os.environ.get("AUTH_COOKIE_KEY", ""),
+        cookie_expiry_days=30,
+        auto_hash=False,
+    )
+
+
 def main() -> None:
     """Run the Foodie Streamlit application."""
     st.set_page_config(
@@ -38,8 +63,32 @@ def main() -> None:
         layout="wide",
     )
 
+    authenticator = _build_authenticator()
+
+    if authenticator is not None:
+        authenticator.login(
+            location="main",
+            max_login_attempts=5,
+            fields={
+                "Form name": "Logga in på Foodie",
+                "Username": "Användarnamn",
+                "Password": "Lösenord",
+                "Login": "Logga in",
+            },
+        )
+        status = st.session_state.get("authentication_status")
+        if status is False:
+            st.error("Felaktigt användarnamn eller lösenord.")
+            return
+        if status is None:
+            return
+
     st.sidebar.title("🛒 Foodie")
     st.sidebar.caption("Analysera dina matvanor via ICA-kvitton")
+
+    if authenticator is not None:
+        authenticator.logout(button_name="Logga ut", location="sidebar")
+
     page = st.sidebar.radio(
         "Navigering",
         ["Ladda upp kvitto", "Analys & Trender"],
