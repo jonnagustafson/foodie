@@ -63,8 +63,14 @@ def _render_upload_page() -> None:
         "Ladda upp ett PDF-kvitto från ICA-appen eller ICAs webb för att spara det i din historik."
     )
 
+    _MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
+
     uploaded = st.file_uploader("Välj PDF-kvitto", type=["pdf"])
     if uploaded is None:
+        return
+
+    if uploaded.size > _MAX_PDF_BYTES:
+        st.error("Filen är för stor (max 20 MB).")
         return
 
     if receipt_already_saved(uploaded.name):
@@ -77,8 +83,8 @@ def _render_upload_page() -> None:
 
     try:
         parsed = parse_ica_receipt(tmp_path)
-    except Exception as exc:
-        st.error(f"Kunde inte läsa kvittot: {exc}")
+    except Exception:
+        st.error("Kunde inte läsa kvittot. Kontrollera att det är ett digitalt ICA-kvitto i PDF-format.")
         return
     finally:
         Path(tmp_path).unlink(missing_ok=True)

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import csv
+import re
 import uuid
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from core.categories import all_categories
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _RECEIPTS_CSV = _DATA_DIR / "receipts.csv"
@@ -15,6 +18,14 @@ _ITEMS_CSV = _DATA_DIR / "items.csv"
 
 _RECEIPT_FIELDS = ["receipt_id", "date", "store", "total", "filename"]
 _ITEM_FIELDS = ["id", "receipt_id", "date", "name", "price", "quantity", "category"]
+
+
+_CSV_INJECT_RE = re.compile(r"^[=+\-@\t\r]")
+
+
+def _sanitize(value: str) -> str:
+    """Strip leading characters that spreadsheet apps interpret as formula prefixes."""
+    return _CSV_INJECT_RE.sub("", value).strip()
 
 
 def ensure_data_dir() -> None:
@@ -47,9 +58,9 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
             {
                 "receipt_id": receipt_id,
                 "date": parsed["date"],
-                "store": parsed["store"],
+                "store": _sanitize(parsed["store"]),
                 "total": parsed["total"],
-                "filename": filename,
+                "filename": _sanitize(filename),
             }
         )
 
@@ -61,10 +72,10 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
                     "id": uuid.uuid4().hex[:8],
                     "receipt_id": receipt_id,
                     "date": parsed["date"],
-                    "name": item["name"],
+                    "name": _sanitize(item["name"]),
                     "price": item["price"],
                     "quantity": item["quantity"],
-                    "category": item.get("category", "Övrigt"),
+                    "category": _sanitize(item.get("category", "Övrigt")),
                 }
             )
 
@@ -111,6 +122,10 @@ def update_item_category(item_id: str, category: str) -> None:
         KeyError: If no item with the given ID exists.
         IOError: If reading or writing the CSV fails.
     """
+    if not re.fullmatch(r"[0-9a-f]{8}", item_id):
+        raise ValueError(f"Invalid item_id format: {item_id!r}")
+    if category not in all_categories():
+        raise ValueError(f"Unknown category: {category!r}")
     ensure_data_dir()
     df = pd.read_csv(_ITEMS_CSV, dtype=str)
     if item_id not in df["id"].values:

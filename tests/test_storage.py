@@ -62,7 +62,15 @@ class TestUpdateItemCategory:
 
     def test_unknown_id_raises_key_error(self, tmp_storage: Path) -> None:
         with pytest.raises(KeyError):
+            update_item_category("deadbeef", "Fryst")
+
+    def test_invalid_id_format_raises_value_error(self, tmp_storage: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid item_id"):
             update_item_category("nonexistent", "Fryst")
+
+    def test_invalid_category_raises_value_error(self, tmp_storage: Path) -> None:
+        with pytest.raises(ValueError, match="Unknown category"):
+            update_item_category("aaaa1111", "Nonsense")
 
     def test_update_is_persisted(self, tmp_storage: Path) -> None:
         update_item_category("bbbb2222", "Dryck")

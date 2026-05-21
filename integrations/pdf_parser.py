@@ -96,6 +96,11 @@ def parse_ica_receipt(pdf_path: str | Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
+    with path.open("rb") as f:
+        magic = f.read(5)
+    if magic != b"%PDF-":
+        raise ValueError("File does not appear to be a valid PDF.")
+
     lines = _extract_lines(path)
     if not lines:
         raise ValueError("Could not extract any text from the PDF.")
