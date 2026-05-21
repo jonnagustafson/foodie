@@ -159,6 +159,56 @@ def _extract_total(lines: list[str]) -> float:
     return 0.0
 
 
+def _try_parse_item_line(line: str) -> tuple[str, float, bool] | None:
+    """Parse a positive-price product line.
+
+    Returns:
+        (name, price, has_deal_marker) or None if the line is not a product.
+    """
+    if _should_skip(line):
+        return None
+    price_match = _PRICE_RE.search(line)
+    if not price_match:
+        return None
+    pre_price = line[: price_match.start()].rstrip()
+    if pre_price.endswith("-"):
+        return None  # negative line — handled by _parse_negative_line
+    price = _parse_price(price_match.group(1))
+    if price == 0 or not pre_price or not any(c.isalpha() for c in pre_price):
+        return None
+    return pre_price, price, pre_price.startswith("*")
+
+
+def _consume_quantity_line(lines: list[str], i: int) -> tuple[float, int]:
+    """Consume lines[i+1] if it is a quantity line.
+
+    Returns:
+        (quantity, new_i) — new_i is i+1 if consumed, i otherwise.
+    """
+    if i + 1 < len(lines):
+        qty_match = _QTY_LINE_RE.match(lines[i + 1])
+        if qty_match:
+            raw = qty_match.group(1).replace(",", ".")
+            try:
+                return float(raw), i + 1
+            except ValueError:
+                pass
+    return 1.0, i
+
+
+def _consume_deal_line(lines: list[str], i: int) -> tuple[dict[str, Any] | None, int]:
+    """Consume lines[i+1] if it is a club-card deal line.
+
+    Returns:
+        (deal_dict, new_i) — new_i is i+1 if consumed, i otherwise.
+    """
+    if i + 1 < len(lines):
+        deal = _try_parse_deal(lines[i + 1])
+        if deal is not None:
+            return deal, i + 1
+    return None, i
+
+
 def _extract_items(
     lines: list[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -176,59 +226,27 @@ def _extract_items(
     while i < len(lines):
         line = lines[i]
 
-        if _should_skip(line):
+        saving = _parse_negative_line(line)
+        if saving is not None:
+            name, amount = saving
+            savings.append({"name": name, "amount": amount})
             i += 1
             continue
 
-        price_match = _PRICE_RE.search(line)
-        if not price_match:
+        item_line = _try_parse_item_line(line)
+        if item_line is None:
             i += 1
             continue
 
-        pre_price = line[: price_match.start()].rstrip()
-        price = _parse_price(price_match.group(1))
-
-        if pre_price.endswith("-"):
-            # Standalone negative line → cart-level saving (not a product).
-            result = _parse_negative_line(line)
-            if result is not None:
-                name, amount = result
-                savings.append({"name": name, "amount": amount})
-            i += 1
-            continue
-
-        if price == 0:
-            i += 1
-            continue
-
-        # ICA marks items with an active club deal using a leading '*'.
-        has_deal_marker = pre_price.startswith("*")
-        name = pre_price
-        if not name or not any(c.isalpha() for c in name):
-            i += 1
-            continue
-
-        quantity = 1.0
-        if i + 1 < len(lines):
-            qty_match = _QTY_LINE_RE.match(lines[i + 1])
-            if qty_match:
-                raw = qty_match.group(1).replace(",", ".")
-                try:
-                    quantity = float(raw)
-                except ValueError:
-                    pass
-                i += 1  # consume the quantity line
+        name, price, has_deal_marker = item_line
+        quantity, i = _consume_quantity_line(lines, i)
 
         # price on the item line is the line total; convert to unit price
         # so that price * quantity = line total in all analytics.
         if quantity > 1:
             price = price / quantity
 
-        deal = None
-        if has_deal_marker and i + 1 < len(lines):
-            deal = _try_parse_deal(lines[i + 1])
-            if deal is not None:
-                i += 1  # consume the deal line
+        deal, i = _consume_deal_line(lines, i) if has_deal_marker else (None, i)
 
         items.append(
             {"name": _clean_name(name), "price": price, "quantity": quantity, "deal": deal}
