@@ -109,11 +109,21 @@ def _load_csv(
     fields: list[str],
     str_cols: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Read a CSV file, returning an empty DataFrame if absent or header-only."""
+    """Read a CSV file, returning an empty DataFrame if absent or header-only.
+
+    Raises:
+        IOError: If the file exists but cannot be parsed (e.g. corrupt data).
+    """
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame(columns=fields)
     dtype = {col: str for col in (str_cols or [])}
-    return pd.read_csv(path, dtype=dtype or None)
+    try:
+        return pd.read_csv(path, dtype=dtype or None)
+    except pd.errors.ParserError as exc:
+        raise IOError(
+            f"Could not parse {path.name}: {exc}. "
+            "The file may be corrupt or written with an incompatible schema."
+        ) from exc
 
 
 def load_receipts() -> pd.DataFrame:
@@ -134,6 +144,7 @@ def load_items() -> pd.DataFrame:
     Returns:
         DataFrame with item data, empty if none exist.
     """
+    _migrate_csv_schema(_ITEMS_CSV, _ITEM_FIELDS)
     df = _load_csv(
         _ITEMS_CSV, _ITEM_FIELDS,
         str_cols=["name", "category", "date", "deal_name"],
@@ -208,3 +219,33 @@ def _ensure_csv(path: Path, fields: list[str]) -> None:
         with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
+
+
+def _migrate_csv_schema(path: Path, fields: list[str]) -> None:
+    """Rewrite the CSV header to match *fields* if the column count has changed.
+
+    Handles forward migrations (columns added). Existing data rows with fewer
+    fields than the new header are left as-is; pandas fills the missing columns
+    with NaN on the next read. Rows that already carry the new fields are
+    unaffected.
+
+    Args:
+        path: Path to the CSV file to inspect and potentially rewrite.
+        fields: The authoritative list of column names for this file.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.reader(f)
+        try:
+            existing_header = next(reader)
+        except StopIteration:
+            return
+        if existing_header == fields:
+            return  # Already current — nothing to do.
+        rows = list(reader)
+
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(fields)
+        writer.writerows(rows)

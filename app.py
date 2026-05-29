@@ -22,7 +22,7 @@ from core.analyzer import (
     compute_summary_metrics,
     compute_top_items,
 )
-from core.categories import all_categories, categorize_item
+from core.categories import all_categories, categorize_item, is_receipt_artifact
 from integrations.pdf_parser import parse_ica_receipt
 from integrations.storage import (
     load_items,
@@ -141,6 +141,9 @@ def _parse_uploaded_file(uploaded: Any) -> dict[str, Any] | None:
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
+    parsed["items"] = [
+        item for item in parsed["items"] if not is_receipt_artifact(item["name"])
+    ]
     for item in parsed["items"]:
         item["category"] = categorize_item(item["name"])
 
