@@ -23,11 +23,43 @@ def compute_spending_by_category(items_df: pd.DataFrame) -> pd.DataFrame:
     return result.sort_values("total", ascending=False)
 
 
+def compute_category_breakdown(items_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute spending per category and subcategory for a hierarchical view.
+
+    Items without a subcategory are grouped under the "Övrigt" label so they
+    still appear as a leaf in a category → subcategory chart.
+
+    Args:
+        items_df: DataFrame with columns [category, price, quantity] and
+            optionally [subcategory].
+
+    Returns:
+        DataFrame with columns [category, subcategory, total] sorted by total
+        descending.
+    """
+    if items_df.empty:
+        return pd.DataFrame(columns=["category", "subcategory", "total"])
+
+    df = items_df.copy()
+    if "subcategory" not in df.columns:
+        df["subcategory"] = ""
+    df["subcategory"] = df["subcategory"].fillna("").replace("", "Övrigt")
+    df["total"] = df["price"] * df["quantity"]
+    result = (
+        df.groupby(["category", "subcategory"])["total"].sum().reset_index()
+    )
+    return result.sort_values("total", ascending=False)
+
+
 def compute_top_items(items_df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     """Compute the most frequently purchased items by total quantity.
 
+    Items are grouped by their canonical name when available, so brand and size
+    variants of the same product (e.g. different egg brands) count together.
+    Falls back to the raw name column when no canonical name is present.
+
     Args:
-        items_df: DataFrame with columns [name, quantity].
+        items_df: DataFrame with columns [quantity] plus [canonical_name] or [name].
         n: Number of top items to return.
 
     Returns:
@@ -36,11 +68,12 @@ def compute_top_items(items_df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     if items_df.empty:
         return pd.DataFrame(columns=["name", "count"])
 
+    group_col = "canonical_name" if "canonical_name" in items_df.columns else "name"
     result = (
-        items_df.groupby("name")["quantity"]
+        items_df.groupby(group_col)["quantity"]
         .sum()
         .reset_index()
-        .rename(columns={"quantity": "count"})
+        .rename(columns={group_col: "name", "quantity": "count"})
         .sort_values("count", ascending=False)
         .head(n)
     )

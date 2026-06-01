@@ -17,12 +17,13 @@ import streamlit as st
 import streamlit_authenticator as stauth
 
 from core.analyzer import (
+    compute_category_breakdown,
     compute_monthly_summary,
-    compute_spending_by_category,
     compute_summary_metrics,
     compute_top_items,
 )
-from core.categories import all_categories, categorize_item, is_receipt_artifact
+from core.categories import all_categories, is_receipt_artifact
+from integrations.llm_categorizer import enrich_items
 from integrations.pdf_parser import parse_ica_receipt
 from integrations.storage import (
     load_items,
@@ -144,8 +145,12 @@ def _parse_uploaded_file(uploaded: Any) -> dict[str, Any] | None:
     parsed["items"] = [
         item for item in parsed["items"] if not is_receipt_artifact(item["name"])
     ]
+    enrichments = enrich_items([item["name"] for item in parsed["items"]])
     for item in parsed["items"]:
-        item["category"] = categorize_item(item["name"])
+        enrichment = enrichments[item["name"]]
+        item["category"] = enrichment["category"]
+        item["canonical_name"] = enrichment["canonical_name"]
+        item["subcategory"] = enrichment["subcategory"]
 
     return parsed
 
@@ -165,7 +170,9 @@ def _render_receipt_preview(parsed: dict[str, Any]) -> pd.DataFrame:
     col2.metric("Butik", parsed["store"])
     col3.metric("Summa", f"{parsed['total']:.2f} kr")
 
-    items_df = pd.DataFrame(parsed["items"])[["name", "quantity", "price", "category"]]
+    items_df = pd.DataFrame(parsed["items"])[
+        ["name", "quantity", "price", "category", "subcategory"]
+    ]
     edited_df = st.data_editor(
         items_df.rename(
             columns={
@@ -173,6 +180,7 @@ def _render_receipt_preview(parsed: dict[str, Any]) -> pd.DataFrame:
                 "quantity": "Antal",
                 "price": "Pris (kr)",
                 "category": "Kategori",
+                "subcategory": "Underkategori",
             }
         ),
         column_config={
@@ -180,6 +188,7 @@ def _render_receipt_preview(parsed: dict[str, Any]) -> pd.DataFrame:
             "Antal": st.column_config.NumberColumn("Antal", disabled=True),
             "Pris (kr)": st.column_config.NumberColumn("Pris (kr)", disabled=True),
             "Kategori": _category_select_column(),
+            "Underkategori": st.column_config.TextColumn("Underkategori"),
         },
         use_container_width=True,
         hide_index=True,
@@ -223,6 +232,7 @@ def _render_upload_page() -> None:
     if st.button("Spara kvitto", type="primary"):
         for i, item in enumerate(parsed["items"]):
             item["category"] = edited_df.iloc[i]["Kategori"]
+            item["subcategory"] = edited_df.iloc[i]["Underkategori"]
         receipt_id = save_receipt(parsed, uploaded.name)
         st.success(f"Kvitto sparat! (ID: {receipt_id})")
         st.balloons()
@@ -280,17 +290,17 @@ def _render_dashboard_page() -> None:
 
     with col_left:
         st.subheader("Utgifter per kategori")
-        cat_df = compute_spending_by_category(filtered)
-        if not cat_df.empty:
-            fig = px.pie(
-                cat_df,
+        breakdown_df = compute_category_breakdown(filtered)
+        if not breakdown_df.empty:
+            fig = px.sunburst(
+                breakdown_df,
+                path=["category", "subcategory"],
                 values="total",
-                names="category",
-                hole=0.4,
             )
-            fig.update_traces(textposition="inside", textinfo="percent+label")
-            fig.update_layout(showlegend=False, margin=dict(t=20, b=20))
+            fig.update_traces(textinfo="label+percent entry")
+            fig.update_layout(margin=dict(t=20, b=20, l=0, r=0))
             st.plotly_chart(fig, use_container_width=True)
+            st.caption("Klicka på en kategori för att se underkategorier.")
 
     with col_right:
         st.subheader("Topp 10 varor")
@@ -326,15 +336,25 @@ def _render_dashboard_page() -> None:
 
     # --- Category editor ---
     with st.expander("Redigera kategorier"):
-        edit_source = filtered[["id", "date", "name", "category"]].reset_index(drop=True)
+        edit_source = filtered[
+            ["id", "date", "name", "category", "subcategory"]
+        ].reset_index(drop=True)
         edited_categories = st.data_editor(
-            edit_source[["date", "name", "category"]].rename(
-                columns={"date": "Datum", "name": "Vara", "category": "Kategori"}
+            edit_source[["date", "name", "category", "subcategory"]].rename(
+                columns={
+                    "date": "Datum",
+                    "name": "Vara",
+                    "category": "Kategori",
+                    "subcategory": "Underkategori",
+                }
             ),
             column_config={
                 "Datum": st.column_config.TextColumn("Datum", disabled=True),
                 "Vara": st.column_config.TextColumn("Vara", disabled=True),
                 "Kategori": _category_select_column(),
+                "Underkategori": st.column_config.TextColumn(
+                    "Underkategori", disabled=True
+                ),
             },
             use_container_width=True,
             hide_index=True,

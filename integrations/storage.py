@@ -20,7 +20,7 @@ _SAVINGS_CSV = _DATA_DIR / "savings.csv"
 _RECEIPT_FIELDS = ["receipt_id", "date", "store", "total", "filename"]
 _ITEM_FIELDS = [
     "id", "receipt_id", "date", "name", "price", "quantity", "category",
-    "deal_name", "deal_discount",
+    "deal_name", "deal_discount", "canonical_name", "subcategory",
 ]
 _SAVINGS_FIELDS = ["id", "receipt_id", "date", "name", "amount"]
 
@@ -85,6 +85,10 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
                     "category": _sanitize(item.get("category", "Övrigt")),
                     "deal_name": _sanitize(deal.get("name", "")),
                     "deal_discount": deal.get("discount", ""),
+                    "canonical_name": _sanitize(
+                        item.get("canonical_name") or item["name"]
+                    ),
+                    "subcategory": _sanitize(item.get("subcategory", "")),
                 }
             )
 
@@ -147,7 +151,8 @@ def load_items() -> pd.DataFrame:
     _migrate_csv_schema(_ITEMS_CSV, _ITEM_FIELDS)
     df = _load_csv(
         _ITEMS_CSV, _ITEM_FIELDS,
-        str_cols=["name", "category", "date", "deal_name"],
+        str_cols=["name", "category", "date", "deal_name", "canonical_name",
+                  "subcategory"],
     )
     if df.empty:
         return df
@@ -160,6 +165,16 @@ def load_items() -> pd.DataFrame:
         df["deal_discount"] = 0.0
     df["deal_name"] = df["deal_name"].fillna("")
     df["deal_discount"] = pd.to_numeric(df["deal_discount"], errors="coerce").fillna(0.0)
+    if "subcategory" not in df.columns:
+        df["subcategory"] = ""
+    df["subcategory"] = df["subcategory"].fillna("")
+    # canonical_name groups item variants; for rows predating it, fall back to
+    # the raw name so each item still aggregates as itself.
+    if "canonical_name" not in df.columns:
+        df["canonical_name"] = ""
+    df["canonical_name"] = df["canonical_name"].fillna("")
+    blank = df["canonical_name"].str.strip() == ""
+    df.loc[blank, "canonical_name"] = df.loc[blank, "name"]
     return df
 
 

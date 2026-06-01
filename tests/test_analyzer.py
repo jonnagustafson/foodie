@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from core.analyzer import (
+    compute_category_breakdown,
     compute_monthly_summary,
     compute_spending_by_category,
     compute_summary_metrics,
@@ -52,6 +53,30 @@ class TestComputeTopItems:
 
     def test_empty_input(self) -> None:
         result = compute_top_items(pd.DataFrame())
+        assert result.empty
+
+
+class TestComputeCategoryBreakdown:
+    def test_groups_by_category_and_subcategory(self) -> None:
+        df = pd.DataFrame(
+            [
+                {"price": 15.0, "quantity": 2.0, "category": "Mejeri & Ägg", "subcategory": "Mjölk"},
+                {"price": 30.0, "quantity": 1.0, "category": "Mejeri & Ägg", "subcategory": "Ägg"},
+                {"price": 25.0, "quantity": 1.0, "category": "Mejeri & Ägg", "subcategory": "Mjölk"},
+            ]
+        )
+        result = compute_category_breakdown(df)
+        totals = dict(zip(result["subcategory"], result["total"]))
+        assert totals["Mjölk"] == pytest.approx(55.0)  # 15*2 + 25
+        assert totals["Ägg"] == pytest.approx(30.0)
+
+    def test_blank_subcategory_labelled_ovrigt(self, sample_items: pd.DataFrame) -> None:
+        # sample_items has no subcategory column at all.
+        result = compute_category_breakdown(sample_items)
+        assert set(result["subcategory"]) == {"Övrigt"}
+
+    def test_empty_input(self) -> None:
+        result = compute_category_breakdown(pd.DataFrame())
         assert result.empty
 
 
