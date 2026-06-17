@@ -26,12 +26,14 @@ def compute_spending_by_category(items_df: pd.DataFrame) -> pd.DataFrame:
 def compute_category_breakdown(items_df: pd.DataFrame) -> pd.DataFrame:
     """Compute spending per category and subcategory for a hierarchical view.
 
-    Items without a subcategory are grouped under the "Övrigt" label so they
-    still appear as a leaf in a category → subcategory chart.
+    When subcategory is empty, falls back to canonical_name (the generic
+    product label produced by the LLM, e.g. "Morot" or "Spagetti"), then to
+    the raw item name, so every leaf in the chart carries a meaningful label
+    instead of "Övrigt".
 
     Args:
         items_df: DataFrame with columns [category, price, quantity] and
-            optionally [subcategory].
+            optionally [subcategory], [canonical_name], [name].
 
     Returns:
         DataFrame with columns [category, subcategory, total] sorted by total
@@ -43,7 +45,17 @@ def compute_category_breakdown(items_df: pd.DataFrame) -> pd.DataFrame:
     df = items_df.copy()
     if "subcategory" not in df.columns:
         df["subcategory"] = ""
-    df["subcategory"] = df["subcategory"].fillna("").replace("", "Övrigt")
+    df["subcategory"] = df["subcategory"].fillna("").str.strip()
+
+    # Fill missing subcategory with canonical_name, then raw name, then "Övrigt".
+    if "canonical_name" in df.columns:
+        mask = df["subcategory"] == ""
+        df.loc[mask, "subcategory"] = df.loc[mask, "canonical_name"].fillna("")
+    if "name" in df.columns:
+        mask = df["subcategory"] == ""
+        df.loc[mask, "subcategory"] = df.loc[mask, "name"].fillna("")
+    df["subcategory"] = df["subcategory"].replace("", "Övrigt")
+
     df["total"] = df["price"] * df["quantity"]
     result = (
         df.groupby(["category", "subcategory"])["total"].sum().reset_index()
