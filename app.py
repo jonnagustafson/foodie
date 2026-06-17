@@ -34,6 +34,24 @@ from integrations.storage import (
 )
 
 
+def _env_int(name: str, default: int) -> int:
+    """Read a positive integer from an environment variable.
+
+    Args:
+        name: Environment variable name.
+        default: Value to use when the variable is unset or not a positive int.
+
+    Returns:
+        The parsed integer, or *default* if missing or invalid.
+    """
+    raw = os.environ.get(name, "")
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def _build_authenticator() -> stauth.Authenticate | None:
     """Return an Authenticate instance if auth env vars are configured, else None."""
     username = os.environ.get("AUTH_USERNAME", "")
@@ -52,7 +70,7 @@ def _build_authenticator() -> stauth.Authenticate | None:
         credentials,
         cookie_name=os.environ.get("AUTH_COOKIE_NAME", "foodie_auth"),
         cookie_key=os.environ.get("AUTH_COOKIE_KEY", ""),
-        cookie_expiry_days=30,
+        cookie_expiry_days=_env_int("AUTH_COOKIE_EXPIRY_DAYS", 30),
         auto_hash=False,
     )
 
@@ -70,7 +88,7 @@ def main() -> None:
     if authenticator is not None:
         authenticator.login(
             location="main",
-            max_login_attempts=5,
+            max_login_attempts=_env_int("AUTH_MAX_LOGIN_ATTEMPTS", 5),
             fields={
                 "Form name": "Logga in på Foodie",
                 "Username": "Användarnamn",
@@ -119,7 +137,9 @@ def _category_select_column() -> st.column_config.SelectboxColumn:
 # ---------------------------------------------------------------------------
 
 
-_MAX_PDF_BYTES = 20 * 1024 * 1024  # 20 MB
+# Upload size limit, configurable via MAX_PDF_MB (defaults to 20 MB).
+_MAX_PDF_MB = _env_int("MAX_PDF_MB", 20)
+_MAX_PDF_BYTES = _MAX_PDF_MB * 1024 * 1024
 
 
 def _parse_uploaded_file(uploaded: Any) -> dict[str, Any] | None:
@@ -131,15 +151,20 @@ def _parse_uploaded_file(uploaded: Any) -> dict[str, Any] | None:
     Returns:
         Parsed receipt dict with category-enriched items, or None on failure.
     """
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(uploaded.read())
-        tmp_path = tmp.name
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(uploaded.read())
+            tmp_path = tmp.name
+    except OSError as exc:
+        st.error(f"Kunde inte spara den uppladdade filen tillfälligt: {exc}")
+        return None
 
     try:
         parsed = parse_ica_receipt(tmp_path)
-    except Exception:
+    except (ValueError, FileNotFoundError) as exc:
         st.error(
-            "Kunde inte läsa kvittot. Kontrollera att det är ett digitalt ICA-kvitto i PDF-format."
+            "Kunde inte läsa kvittot. Kontrollera att det är ett digitalt "
+            f"ICA-kvitto i PDF-format.\n\nDetalj: {exc}"
         )
         return None
     finally:
@@ -211,7 +236,7 @@ def _render_upload_page() -> None:
         return
 
     if uploaded.size > _MAX_PDF_BYTES:
-        st.error("Filen är för stor (max 20 MB).")
+        st.error(f"Filen är för stor (max {_MAX_PDF_MB} MB).")
         return
 
     if receipt_already_saved(uploaded.name):
@@ -227,7 +252,11 @@ def _render_upload_page() -> None:
     if st.button("Spara kvitto", type="primary"):
         for i, item in enumerate(parsed["items"]):
             item["category"] = edited_df.iloc[i]["Kategori"]
-        receipt_id = save_receipt(parsed, uploaded.name)
+        try:
+            receipt_id = save_receipt(parsed, uploaded.name)
+        except IOError as exc:
+            st.error(f"Kunde inte spara kvittot: {exc}")
+            return
         st.success(f"Kvitto sparat! (ID: {receipt_id})")
         st.balloons()
 
@@ -235,6 +264,9 @@ def _render_upload_page() -> None:
 # ---------------------------------------------------------------------------
 # Dashboard page
 # ---------------------------------------------------------------------------
+
+
+_TOP_ITEMS_N = 10
 
 
 def _render_dashboard_page() -> None:
@@ -303,8 +335,8 @@ def _render_dashboard_page() -> None:
             st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        st.subheader("Topp 10 varor")
-        top_df = compute_top_items(filtered)
+        st.subheader(f"Topp {_TOP_ITEMS_N} varor")
+        top_df = compute_top_items(filtered, n=_TOP_ITEMS_N)
         if not top_df.empty:
             fig = px.bar(
                 top_df.sort_values("count"),
@@ -354,10 +386,14 @@ def _render_dashboard_page() -> None:
         )
         if st.button("Spara kategorier"):
             changes = st.session_state.get("category_editor", {}).get("edited_rows", {})
-            for row_idx, changed_fields in changes.items():
-                if "Kategori" in changed_fields:
-                    item_id = edit_source.iloc[row_idx]["id"]
-                    update_item_category(item_id, changed_fields["Kategori"])
+            try:
+                for row_idx, changed_fields in changes.items():
+                    if "Kategori" in changed_fields:
+                        item_id = edit_source.iloc[row_idx]["id"]
+                        update_item_category(item_id, changed_fields["Kategori"])
+            except (KeyError, ValueError, IOError) as exc:
+                st.error(f"Kunde inte spara kategorierna: {exc}")
+                return
             if changes:
                 st.success(f"{len(changes)} kategori(er) uppdaterade.")
                 st.rerun()

@@ -153,6 +153,11 @@ class TestUpdateItemCategory:
         assert "deal_discount" in df.columns
         assert (df["deal_discount"] == 0.0).all()
 
+    def test_updates_against_old_schema(self, tmp_storage_old_schema: Path) -> None:
+        update_item_category("aaaa1111", "Fryst")
+        df = storage_module.load_items()
+        assert df.loc[df["id"] == "aaaa1111", "category"].iloc[0] == "Fryst"
+
 
 class TestSaveReceipt:
     def test_saves_item_without_deal(self, tmp_storage: Path) -> None:
