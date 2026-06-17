@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from core.analyzer import (
+    compute_category_breakdown,
     compute_monthly_summary,
     compute_spending_by_category,
     compute_summary_metrics,
@@ -52,6 +53,55 @@ class TestComputeTopItems:
 
     def test_empty_input(self) -> None:
         result = compute_top_items(pd.DataFrame())
+        assert result.empty
+
+
+class TestComputeCategoryBreakdown:
+    def test_groups_by_category_and_subcategory(self) -> None:
+        df = pd.DataFrame(
+            [
+                {"price": 15.0, "quantity": 2.0, "category": "Mejeri & Ägg", "subcategory": "Mjölk"},
+                {"price": 30.0, "quantity": 1.0, "category": "Mejeri & Ägg", "subcategory": "Ägg"},
+                {"price": 25.0, "quantity": 1.0, "category": "Mejeri & Ägg", "subcategory": "Mjölk"},
+            ]
+        )
+        result = compute_category_breakdown(df)
+        totals = dict(zip(result["subcategory"], result["total"]))
+        assert totals["Mjölk"] == pytest.approx(55.0)  # 15*2 + 25
+        assert totals["Ägg"] == pytest.approx(30.0)
+
+    def test_falls_back_to_canonical_name(self) -> None:
+        # When subcategory is empty but canonical_name is present, use canonical_name.
+        df = pd.DataFrame(
+            [
+                {"price": 12.0, "quantity": 1.0, "category": "Grönsaker", "subcategory": "", "canonical_name": "Morot", "name": "Morot ICA Eko 1kg"},
+                {"price": 20.0, "quantity": 1.0, "category": "Pasta, Ris & Gryn", "subcategory": "", "canonical_name": "Spagetti", "name": "Barilla Spaghetti 500g"},
+            ]
+        )
+        result = compute_category_breakdown(df)
+        subcategories = set(result["subcategory"])
+        assert "Morot" in subcategories
+        assert "Spagetti" in subcategories
+        assert "Övrigt" not in subcategories
+
+    def test_falls_back_to_name_when_no_canonical(self) -> None:
+        # When both subcategory and canonical_name are absent, fall back to raw name.
+        df = pd.DataFrame(
+            [
+                {"price": 12.0, "quantity": 1.0, "category": "Grönsaker", "subcategory": "", "name": "Gurka lös"},
+            ]
+        )
+        result = compute_category_breakdown(df)
+        assert set(result["subcategory"]) == {"Gurka lös"}
+
+    def test_blank_subcategory_and_no_name_columns_labelled_ovrigt(self, sample_items: pd.DataFrame) -> None:
+        # sample_items has no subcategory, canonical_name, or name column → "Övrigt".
+        df = sample_items.drop(columns=["name"])
+        result = compute_category_breakdown(df)
+        assert set(result["subcategory"]) == {"Övrigt"}
+
+    def test_empty_input(self) -> None:
+        result = compute_category_breakdown(pd.DataFrame())
         assert result.empty
 
 

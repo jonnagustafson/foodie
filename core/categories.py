@@ -31,7 +31,7 @@ _CATEGORY_KEYWORDS: dict[str, list[str]] = {
         "parmigiano", "pecorino", "stilton", "roquefort", "havarti",
     ],
     "Dryck": [
-        "juice", "kaffe", "vatten", "läsk", "cider", "vitaminwell"
+        "juice", "kaffe", "vatten", "läsk", "cider", "vitaminwell",
         "saft", "smoothie", "energidryck", "mineralvatten", "lemonad",
         "kakao", "cola", "fanta", "sprite", "lättöl", "folköl", "loka",
         "ramlösa",
