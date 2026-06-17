@@ -22,6 +22,8 @@ from core.categories import UNCATEGORIZED, categorize_item
         ("Pasta Penne 500g", "Pasta, Ris & Gryn"),
         ("Apelsinjuice 1l", "Dryck"),
         ("Kaffe Mellanrost 500g", "Dryck"),
+        ("Saft Hallon", "Dryck"),
+        ("Vitaminwell Reload", "Dryck"),
         ("Olivolja Extra Virgin", "Skafferi"),
         ("Chips Sourcream & Onion", "Snacks & Godis"),
         ("Chokladkaka 200g", "Snacks & Godis"),

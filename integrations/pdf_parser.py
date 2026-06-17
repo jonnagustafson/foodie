@@ -79,6 +79,9 @@ _ITEM_DETAIL_RE = re.compile(
 
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
+# Number of leading lines scanned for the store-name header.
+_STORE_HEADER_LINES = 10
+
 
 def parse_ica_receipt(pdf_path: str | Path) -> dict[str, Any]:
     """Parse an ICA receipt PDF and extract structured data.
@@ -129,13 +132,24 @@ def parse_ica_receipt(pdf_path: str | Path) -> dict[str, Any]:
 
 
 def _extract_lines(path: Path) -> list[str]:
-    """Extract non-empty text lines from all pages of a PDF."""
-    with pdfplumber.open(path) as pdf:
-        raw_lines: list[str] = []
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                raw_lines.extend(text.splitlines())
+    """Extract non-empty text lines from all pages of a PDF.
+
+    Raises:
+        ValueError: If the PDF cannot be opened or its text cannot be read
+            (e.g. the file is encrypted, truncated, or corrupt).
+    """
+    try:
+        with pdfplumber.open(path) as pdf:
+            raw_lines: list[str] = []
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    raw_lines.extend(text.splitlines())
+    except Exception as exc:
+        raise ValueError(
+            f"Could not read PDF content: {exc}. "
+            "The file may be encrypted, truncated, or corrupt."
+        ) from exc
     return [line.strip() for line in raw_lines if line.strip()]
 
 
@@ -150,7 +164,7 @@ def _extract_date(lines: list[str]) -> str:
 
 def _extract_store(lines: list[str]) -> str:
     """Extract the store name from the receipt header."""
-    for line in lines[:10]:
+    for line in lines[:_STORE_HEADER_LINES]:
         if "ica" in line.lower():
             return line.strip()
     return "ICA"
@@ -249,9 +263,11 @@ def _extract_items(
         name, price, has_deal_marker = item_line
         quantity, i = _consume_quantity_line(lines, i)
 
-        # price on the item line is the line total; convert to unit price
-        # so that price * quantity = line total in all analytics.
-        if quantity > 1:
+        # The price on the item line is the line total; convert it to a unit
+        # price so that price * quantity == line total in all analytics. This
+        # also covers weight-based quantities below 1 (e.g. "0,456 kg"), where
+        # the line total must still be divided by the weight.
+        if quantity > 0 and quantity != 1:
             price = price / quantity
 
         deal, i = _consume_deal_line(lines, i) if has_deal_marker else (None, i)

@@ -96,6 +96,26 @@ class TestComputeMonthlySummary:
         result = compute_monthly_summary(pd.DataFrame())
         assert result.empty
 
+    def test_drops_unparseable_dates(self, sample_items: pd.DataFrame) -> None:
+        bad_row = pd.DataFrame(
+            [
+                {
+                    "receipt_id": "c3",
+                    "date": "not-a-date",
+                    "name": "Mystisk vara",
+                    "price": 99.0,
+                    "quantity": 1.0,
+                    "category": "Övrigt",
+                }
+            ]
+        )
+        result = compute_monthly_summary(pd.concat([sample_items, bad_row]))
+        assert set(result["month"]) == {"2024-01", "2024-02"}
+
+    def test_all_dates_unparseable_returns_empty(self) -> None:
+        df = pd.DataFrame([{"date": "bad", "price": 10.0, "quantity": 1.0}])
+        assert compute_monthly_summary(df).empty
+
 
 class TestComputeSummaryMetrics:
     def test_correct_totals(self, sample_items: pd.DataFrame) -> None:

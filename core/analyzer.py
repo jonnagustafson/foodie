@@ -55,13 +55,19 @@ def compute_monthly_summary(items_df: pd.DataFrame) -> pd.DataFrame:
 
     Returns:
         DataFrame with columns [month, total] sorted by month ascending.
+        Rows whose date cannot be parsed are dropped; if no row has a valid
+        date an empty DataFrame is returned.
     """
     if items_df.empty:
         return pd.DataFrame(columns=["month", "total"])
 
     df = items_df.copy()
     df["total"] = df["price"] * df["quantity"]
-    df["month"] = pd.to_datetime(df["date"]).dt.to_period("M").astype(str)
+    parsed_dates = pd.to_datetime(df["date"], errors="coerce")
+    df = df[parsed_dates.notna()].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["month", "total"])
+    df["month"] = parsed_dates.dropna().dt.to_period("M").astype(str)
     result = df.groupby("month")["total"].sum().reset_index()
     return result.sort_values("month")
 

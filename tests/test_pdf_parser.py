@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from integrations.pdf_parser import (
@@ -113,6 +115,19 @@ class TestExtractItems:
         items, _ = _extract_items(lines)
         assert len(items) == 1
         assert items[0]["quantity"] == pytest.approx(2.0)
+
+    def test_weight_quantity_converts_to_unit_price(self) -> None:
+        # Line total 9,07 for 0,456 kg: price must be divided by the weight so
+        # that price * quantity == line total (was a bug for quantity < 1).
+        lines = [
+            "Bananer  9,07",
+            "0,456 kg x 19,90 kr/kg",
+        ]
+        items, _ = _extract_items(lines)
+        assert len(items) == 1
+        assert items[0]["quantity"] == pytest.approx(0.456)
+        assert items[0]["price"] == pytest.approx(9.07 / 0.456)
+        assert items[0]["price"] * items[0]["quantity"] == pytest.approx(9.07)
 
     def test_attaches_deal_to_parent_item(self) -> None:
         lines = [
@@ -268,3 +283,18 @@ class TestParseIcaReceiptRealFile:
     def test_file_not_found(self) -> None:
         with pytest.raises(FileNotFoundError):
             parse_ica_receipt("nonexistent.pdf")
+
+
+class TestParseIcaReceiptErrors:
+    def test_non_pdf_file_raises_value_error(self, tmp_path: Path) -> None:
+        bad = tmp_path / "not_a_pdf.pdf"
+        bad.write_bytes(b"this is plain text, not a PDF")
+        with pytest.raises(ValueError, match="valid PDF"):
+            parse_ica_receipt(bad)
+
+    def test_corrupt_pdf_raises_value_error(self, tmp_path: Path) -> None:
+        # Valid magic bytes but garbage body — pdfplumber cannot read it.
+        corrupt = tmp_path / "corrupt.pdf"
+        corrupt.write_bytes(b"%PDF-1.4\n garbage that is not a real PDF body")
+        with pytest.raises(ValueError):
+            parse_ica_receipt(corrupt)
