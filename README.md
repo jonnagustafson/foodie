@@ -66,6 +66,11 @@ foodie/
 pytest tests/
 ```
 
+## Driftsättning
+
+Appen driftsätts på Streamlit Community Cloud och har en CI-pipeline (Black +
+pytest) via GitHub Actions. Se [DEPLOY.md](DEPLOY.md) för instruktioner.
+
 ## Teknisk stack
 
 | Komponent | Bibliotek |
