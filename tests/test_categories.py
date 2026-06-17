@@ -19,7 +19,7 @@ from core.categories import UNCATEGORIZED, categorize_item
         ("Potatis Mandelpotatis 1kg", "Grönsaker"),
         ("Levain Surdegsbröd", "Bröd & Bakverk"),
         ("Havregryn 1kg", "Skafferi"),
-        ("Pasta Penne 500g", "Skafferi"),
+        ("Pasta Penne 500g", "Pasta, Ris & Gryn"),
         ("Apelsinjuice 1l", "Dryck"),
         ("Kaffe Mellanrost 500g", "Dryck"),
         ("Olivolja Extra Virgin", "Skafferi"),
