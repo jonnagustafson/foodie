@@ -24,8 +24,15 @@ def _make_parsed(
         "date": date,
         "store": store,
         "total": total,
-        "items": items or [
-            {"name": "Broccoli", "price": 17.99, "quantity": 1.0, "deal": None, "category": "Grönsaker"},
+        "items": items
+        or [
+            {
+                "name": "Broccoli",
+                "price": 17.99,
+                "quantity": 1.0,
+                "deal": None,
+                "category": "Grönsaker",
+            },
         ],
         "savings": savings or [],
     }
@@ -45,8 +52,15 @@ def tmp_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Storage redirected to tmp_path, seeded with current schema."""
     _patch_storage(tmp_path, monkeypatch)
     new_fields = [
-        "id", "receipt_id", "date", "name", "price", "quantity", "category",
-        "deal_name", "deal_discount",
+        "id",
+        "receipt_id",
+        "date",
+        "name",
+        "price",
+        "quantity",
+        "category",
+        "deal_name",
+        "deal_discount",
     ]
     with (tmp_path / "items.csv").open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=new_fields)
@@ -54,14 +68,26 @@ def tmp_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         writer.writerows(
             [
                 {
-                    "id": "aaaa1111", "receipt_id": "r1", "date": "2026-04-27",
-                    "name": "Broccoli", "price": "17.99", "quantity": "1.0",
-                    "category": "Grönsaker", "deal_name": "", "deal_discount": "",
+                    "id": "aaaa1111",
+                    "receipt_id": "r1",
+                    "date": "2026-04-27",
+                    "name": "Broccoli",
+                    "price": "17.99",
+                    "quantity": "1.0",
+                    "category": "Grönsaker",
+                    "deal_name": "",
+                    "deal_discount": "",
                 },
                 {
-                    "id": "bbbb2222", "receipt_id": "r1", "date": "2026-04-27",
-                    "name": "Arla Mjölk", "price": "15.90", "quantity": "1.0",
-                    "category": "Mejeri & Ägg", "deal_name": "", "deal_discount": "",
+                    "id": "bbbb2222",
+                    "receipt_id": "r1",
+                    "date": "2026-04-27",
+                    "name": "Arla Mjölk",
+                    "price": "15.90",
+                    "quantity": "1.0",
+                    "category": "Mejeri & Ägg",
+                    "deal_name": "",
+                    "deal_discount": "",
                 },
             ]
         )
@@ -77,8 +103,15 @@ def tmp_storage_old_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> P
         writer = csv.DictWriter(f, fieldnames=old_fields)
         writer.writeheader()
         writer.writerow(
-            {"id": "aaaa1111", "receipt_id": "r1", "date": "2026-04-27",
-             "name": "Broccoli", "price": "17.99", "quantity": "1.0", "category": "Grönsaker"}
+            {
+                "id": "aaaa1111",
+                "receipt_id": "r1",
+                "date": "2026-04-27",
+                "name": "Broccoli",
+                "price": "17.99",
+                "quantity": "1.0",
+                "category": "Grönsaker",
+            }
         )
     return tmp_path
 
@@ -112,7 +145,9 @@ class TestUpdateItemCategory:
         df = storage_module.load_items()
         assert df.loc[df["id"] == "bbbb2222", "category"].iloc[0] == "Dryck"
 
-    def test_load_items_backfills_deal_columns(self, tmp_storage_old_schema: Path) -> None:
+    def test_load_items_backfills_deal_columns(
+        self, tmp_storage_old_schema: Path
+    ) -> None:
         df = storage_module.load_items()
         assert "deal_name" in df.columns
         assert "deal_discount" in df.columns
@@ -159,7 +194,13 @@ class TestSaveReceipt:
 
     def test_csv_injection_stripped_from_name(self, tmp_storage: Path) -> None:
         items = [
-            {"name": "=HYPERLINK(evil)", "price": 10.0, "quantity": 1.0, "deal": None, "category": "Övrigt"}
+            {
+                "name": "=HYPERLINK(evil)",
+                "price": 10.0,
+                "quantity": 1.0,
+                "deal": None,
+                "category": "Övrigt",
+            }
         ]
         save_receipt(_make_parsed(items=items), "test.pdf")
         df = storage_module.load_items()

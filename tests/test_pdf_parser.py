@@ -195,8 +195,7 @@ class TestParseIcaReceiptRealFile:
             assert not item["name"].startswith("*")
             # No embedded article number (7+ digit code)
             assert not any(
-                part.isdigit() and len(part) >= 7
-                for part in item["name"].split()
+                part.isdigit() and len(part) >= 7 for part in item["name"].split()
             )
 
     def test_known_item_present(self) -> None:
@@ -238,13 +237,17 @@ class TestParseIcaReceiptRealFile:
     def test_item_sum_matches_total(self) -> None:
         result = parse_ica_receipt(REAL_RECEIPT_PATH)
         item_sum = sum(
-            item["price"] * item["quantity"] + (item["deal"]["discount"] if item["deal"] else 0)
+            item["price"] * item["quantity"]
+            + (item["deal"]["discount"] if item["deal"] else 0)
             for item in result["items"]
         )
         savings_sum = sum(s["amount"] for s in result["savings"])
         assert item_sum + savings_sum == pytest.approx(result["total"], abs=0.01)
 
-    @pytest.mark.parametrize("bad_name", ["poäng", "rabatt", "Betalat", "Köp", "6,00 25,40 423,", "25,00 16,30 65,"])
+    @pytest.mark.parametrize(
+        "bad_name",
+        ["poäng", "rabatt", "Betalat", "Köp", "6,00 25,40 423,", "25,00 16,30 65,"],
+    )
     def test_payment_and_vat_lines_excluded(self, bad_name: str) -> None:
         result = parse_ica_receipt(REAL_RECEIPT_PATH)
         names = [item["name"] for item in result["items"]]

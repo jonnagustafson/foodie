@@ -19,8 +19,15 @@ _SAVINGS_CSV = _DATA_DIR / "savings.csv"
 
 _RECEIPT_FIELDS = ["receipt_id", "date", "store", "total", "filename"]
 _ITEM_FIELDS = [
-    "id", "receipt_id", "date", "name", "price", "quantity", "category",
-    "deal_name", "deal_discount",
+    "id",
+    "receipt_id",
+    "date",
+    "name",
+    "price",
+    "quantity",
+    "category",
+    "deal_name",
+    "deal_discount",
 ]
 _SAVINGS_FIELDS = ["id", "receipt_id", "date", "name", "amount"]
 
@@ -146,7 +153,8 @@ def load_items() -> pd.DataFrame:
     """
     _migrate_csv_schema(_ITEMS_CSV, _ITEM_FIELDS)
     df = _load_csv(
-        _ITEMS_CSV, _ITEM_FIELDS,
+        _ITEMS_CSV,
+        _ITEM_FIELDS,
         str_cols=["name", "category", "date", "deal_name"],
     )
     if df.empty:
@@ -159,7 +167,9 @@ def load_items() -> pd.DataFrame:
     if "deal_discount" not in df.columns:
         df["deal_discount"] = 0.0
     df["deal_name"] = df["deal_name"].fillna("")
-    df["deal_discount"] = pd.to_numeric(df["deal_discount"], errors="coerce").fillna(0.0)
+    df["deal_discount"] = pd.to_numeric(df["deal_discount"], errors="coerce").fillna(
+        0.0
+    )
     return df
 
 
