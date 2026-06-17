@@ -109,7 +109,9 @@ def main() -> None:
 
 
 def _category_select_column() -> st.column_config.SelectboxColumn:
-    return st.column_config.SelectboxColumn("Kategori", options=all_categories(), required=True)
+    return st.column_config.SelectboxColumn(
+        "Kategori", options=all_categories(), required=True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +138,9 @@ def _parse_uploaded_file(uploaded: Any) -> dict[str, Any] | None:
     try:
         parsed = parse_ica_receipt(tmp_path)
     except Exception:
-        st.error("Kunde inte läsa kvittot. Kontrollera att det är ett digitalt ICA-kvitto i PDF-format.")
+        st.error(
+            "Kunde inte läsa kvittot. Kontrollera att det är ett digitalt ICA-kvitto i PDF-format."
+        )
         return None
     finally:
         Path(tmp_path).unlink(missing_ok=True)
@@ -262,10 +266,16 @@ def _render_dashboard_page() -> None:
 
     # --- Summary metrics ---
     metrics = compute_summary_metrics(filtered)
-    filtered_savings = savings_df[
-        (savings_df["date"] >= start_date) & (savings_df["date"] <= end_date)
-    ] if not savings_df.empty else savings_df
-    total_savings = filtered_savings["amount"].sum() if not filtered_savings.empty else 0.0
+    filtered_savings = (
+        savings_df[
+            (savings_df["date"] >= start_date) & (savings_df["date"] <= end_date)
+        ]
+        if not savings_df.empty
+        else savings_df
+    )
+    total_savings = (
+        filtered_savings["amount"].sum() if not filtered_savings.empty else 0.0
+    )
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total utgift", f"{metrics['total_spent']:.0f} kr")
@@ -326,7 +336,9 @@ def _render_dashboard_page() -> None:
 
     # --- Category editor ---
     with st.expander("Redigera kategorier"):
-        edit_source = filtered[["id", "date", "name", "category"]].reset_index(drop=True)
+        edit_source = filtered[["id", "date", "name", "category"]].reset_index(
+            drop=True
+        )
         edited_categories = st.data_editor(
             edit_source[["date", "name", "category"]].rename(
                 columns={"date": "Datum", "name": "Vara", "category": "Kategori"}
@@ -355,12 +367,8 @@ def _render_dashboard_page() -> None:
     # --- Receipt history table ---
     st.subheader("Kvittohistorik")
     if not receipts_df.empty:
-        mask = (receipts_df["date"] >= start_date) & (
-            receipts_df["date"] <= end_date
-        )
-        display_df = receipts_df[mask][
-            ["date", "store", "total", "filename"]
-        ].rename(
+        mask = (receipts_df["date"] >= start_date) & (receipts_df["date"] <= end_date)
+        display_df = receipts_df[mask][["date", "store", "total", "filename"]].rename(
             columns={
                 "date": "Datum",
                 "store": "Butik",

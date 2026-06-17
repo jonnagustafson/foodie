@@ -14,7 +14,6 @@ from typing import Any
 
 import pdfplumber
 
-
 # Single precompiled pattern matching any header/footer/summary token.
 # Tokens are sorted longest-first so longer phrases take priority over their substrings.
 _SKIP_RE: re.Pattern[str] = re.compile(
@@ -258,7 +257,12 @@ def _extract_items(
         deal, i = _consume_deal_line(lines, i) if has_deal_marker else (None, i)
 
         items.append(
-            {"name": _clean_name(name), "price": price, "quantity": quantity, "deal": deal}
+            {
+                "name": _clean_name(name),
+                "price": price,
+                "quantity": quantity,
+                "deal": deal,
+            }
         )
         i += 1
 

@@ -15,10 +15,38 @@ from core.analyzer import (
 def sample_items() -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"receipt_id": "a1", "date": "2024-01-10", "name": "Mjölk", "price": 15.0, "quantity": 2.0, "category": "Mejeri & Ägg"},
-            {"receipt_id": "a1", "date": "2024-01-10", "name": "Bröd", "price": 30.0, "quantity": 1.0, "category": "Bröd & Bakverk"},
-            {"receipt_id": "b2", "date": "2024-02-05", "name": "Mjölk", "price": 15.0, "quantity": 1.0, "category": "Mejeri & Ägg"},
-            {"receipt_id": "b2", "date": "2024-02-05", "name": "Chips", "price": 25.0, "quantity": 1.0, "category": "Snacks & Godis"},
+            {
+                "receipt_id": "a1",
+                "date": "2024-01-10",
+                "name": "Mjölk",
+                "price": 15.0,
+                "quantity": 2.0,
+                "category": "Mejeri & Ägg",
+            },
+            {
+                "receipt_id": "a1",
+                "date": "2024-01-10",
+                "name": "Bröd",
+                "price": 30.0,
+                "quantity": 1.0,
+                "category": "Bröd & Bakverk",
+            },
+            {
+                "receipt_id": "b2",
+                "date": "2024-02-05",
+                "name": "Mjölk",
+                "price": 15.0,
+                "quantity": 1.0,
+                "category": "Mejeri & Ägg",
+            },
+            {
+                "receipt_id": "b2",
+                "date": "2024-02-05",
+                "name": "Chips",
+                "price": 25.0,
+                "quantity": 1.0,
+                "category": "Snacks & Godis",
+            },
         ]
     )
 
