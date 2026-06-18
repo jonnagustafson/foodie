@@ -72,6 +72,85 @@ def compute_monthly_summary(items_df: pd.DataFrame) -> pd.DataFrame:
     return result.sort_values("month")
 
 
+def list_trackable_products(items_df: pd.DataFrame) -> list[str]:
+    """List canonical products that appear on at least two distinct dates.
+
+    A price trend needs more than one data point, so single-purchase products
+    are excluded from the selector.
+
+    Args:
+        items_df: DataFrame with columns [canonical_name, date].
+
+    Returns:
+        Canonical product names sorted alphabetically.
+    """
+    if items_df.empty or "canonical_name" not in items_df.columns:
+        return []
+
+    dates_per_product = items_df.groupby("canonical_name")["date"].nunique()
+    trackable = dates_per_product[dates_per_product >= 2].index
+    return sorted(trackable)
+
+
+def compute_price_over_time(
+    items_df: pd.DataFrame, canonical_name: str
+) -> pd.DataFrame:
+    """Compute the unit price of a single product over time.
+
+    Args:
+        items_df: DataFrame with columns [canonical_name, date, price].
+        canonical_name: The canonical product to track.
+
+    Returns:
+        DataFrame with columns [date, price] sorted by date ascending. When a
+        product was bought more than once on the same date, prices are averaged.
+        Empty if the product is not present.
+    """
+    if items_df.empty or "canonical_name" not in items_df.columns:
+        return pd.DataFrame(columns=["date", "price"])
+
+    product = items_df[items_df["canonical_name"] == canonical_name]
+    if product.empty:
+        return pd.DataFrame(columns=["date", "price"])
+
+    result = product.groupby("date")["price"].mean().reset_index()
+    return result.sort_values("date")
+
+
+def compute_price_per_kg(items_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute price per kilogram/litre for weight- and volume-sold products.
+
+    Only items whose selling unit is 'kg' or 'l' carry a meaningful price per
+    unit; per-piece items are excluded because their package weight is unknown.
+
+    Args:
+        items_df: DataFrame with columns [canonical_name, unit, price, date].
+
+    Returns:
+        DataFrame with columns [canonical_name, unit, avg_price, latest_price]
+        sorted by avg_price descending. Empty if no weight-sold items exist.
+    """
+    expected = ["canonical_name", "unit", "avg_price", "latest_price"]
+    if items_df.empty or not {"unit", "canonical_name"}.issubset(items_df.columns):
+        return pd.DataFrame(columns=expected)
+
+    weighed = items_df[items_df["unit"].isin(["kg", "l"])]
+    if weighed.empty:
+        return pd.DataFrame(columns=expected)
+
+    latest = (
+        weighed.sort_values("date")
+        .groupby(["canonical_name", "unit"])["price"]
+        .last()
+        .rename("latest_price")
+    )
+    avg = (
+        weighed.groupby(["canonical_name", "unit"])["price"].mean().rename("avg_price")
+    )
+    result = pd.concat([avg, latest], axis=1).reset_index()
+    return result.sort_values("avg_price", ascending=False)
+
+
 def compute_summary_metrics(items_df: pd.DataFrame) -> dict[str, float | int]:
     """Compute high-level summary metrics from items.
 

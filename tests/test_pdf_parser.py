@@ -129,6 +129,51 @@ class TestExtractItems:
         assert items[0]["price"] == pytest.approx(9.07 / 0.456)
         assert items[0]["price"] * items[0]["quantity"] == pytest.approx(9.07)
 
+    def test_plain_item_defaults_to_st_unit(self) -> None:
+        items, _ = _extract_items(["Arla Mellanmjölk 1,5% 1l  15,90"])
+        assert items[0]["unit"] == "st"
+
+    def test_weight_quantity_line_sets_kg_unit(self) -> None:
+        lines = [
+            "Bananer  9,07",
+            "0,456 kg x 19,90 kr/kg",
+        ]
+        items, _ = _extract_items(lines)
+        assert items[0]["unit"] == "kg"
+        assert items[0]["quantity"] == pytest.approx(0.456)
+
+    def test_count_quantity_line_sets_st_unit(self) -> None:
+        lines = [
+            "Bregott Entre 500g  79,80",
+            "2 x 39,90",
+        ]
+        items, _ = _extract_items(lines)
+        assert items[0]["unit"] == "st"
+        assert items[0]["quantity"] == pytest.approx(2.0)
+
+    def test_embedded_weight_detail_sets_kg_unit_and_price_per_kg(self) -> None:
+        # Weight item with a 4-digit article code and no separate qty line:
+        # "<name> <article> <unit_price> <qty> <unit> <line_total>".
+        items, _ = _extract_items(["Jordärtskocka 4720 35,00 0,91 kg 31,68"])
+        assert items[0]["name"] == "Jordärtskocka"
+        assert items[0]["unit"] == "kg"
+        assert items[0]["quantity"] == pytest.approx(0.91)
+        assert items[0]["price"] == pytest.approx(31.68 / 0.91)
+
+    def test_embedded_count_detail_sets_st_unit(self) -> None:
+        items, _ = _extract_items(["Fikon färska 4266 5,00 1,00 st 5,00"])
+        assert items[0]["name"] == "Fikon färska"
+        assert items[0]["unit"] == "st"
+        assert items[0]["quantity"] == pytest.approx(1.0)
+
+    def test_liter_unit_is_normalized(self) -> None:
+        lines = [
+            "Mjölk  30,00",
+            "2 liter x 15,00",
+        ]
+        items, _ = _extract_items(lines)
+        assert items[0]["unit"] == "l"
+
     def test_attaches_deal_to_parent_item(self) -> None:
         lines = [
             "*Chorizo vegan  35,86",
@@ -202,6 +247,8 @@ class TestParseIcaReceiptRealFile:
             assert "name" in item
             assert "price" in item
             assert "quantity" in item
+            assert "unit" in item
+            assert item["unit"] in {"st", "kg", "l"}
             assert "deal" in item
 
     def test_item_names_are_clean(self) -> None:
