@@ -12,6 +12,7 @@ from typing import Any
 
 import pandas as pd
 
+from core.canonical import canonical_name
 from core.categories import all_categories
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
@@ -30,6 +31,9 @@ _ITEM_FIELDS = [
     "category",
     "deal_name",
     "deal_discount",
+    "unit",
+    "canonical_name",
+    "subcategory",
 ]
 _SAVINGS_FIELDS = ["id", "receipt_id", "date", "name", "amount"]
 
@@ -110,6 +114,9 @@ def save_receipt(parsed: dict[str, Any], filename: str) -> str:
             "category": _sanitize(item.get("category", "Övrigt")),
             "deal_name": _sanitize((item.get("deal") or {}).get("name", "")),
             "deal_discount": (item.get("deal") or {}).get("discount", ""),
+            "unit": item.get("unit", "st"),
+            "canonical_name": _sanitize(canonical_name(item["name"])),
+            "subcategory": _sanitize(item.get("subcategory", "")),
         }
         for item in parsed["items"]
     ]
@@ -175,7 +182,7 @@ def load_items() -> pd.DataFrame:
     df = _load_csv(
         _ITEMS_CSV,
         _ITEM_FIELDS,
-        str_cols=["name", "category", "date", "deal_name"],
+        str_cols=["name", "category", "date", "deal_name", "unit", "canonical_name"],
     )
     if df.empty:
         return df
@@ -190,6 +197,16 @@ def load_items() -> pd.DataFrame:
     df["deal_discount"] = pd.to_numeric(df["deal_discount"], errors="coerce").fillna(
         0.0
     )
+    if "unit" not in df.columns:
+        df["unit"] = "st"
+    if "canonical_name" not in df.columns:
+        df["canonical_name"] = ""
+    # Blank units mean the selling unit was unknown — treat as per-piece ("st").
+    df["unit"] = df["unit"].fillna("").replace("", "st")
+    # Derive canonical names only for rows that lack one (e.g. legacy data).
+    df["canonical_name"] = df["canonical_name"].fillna("")
+    missing = df["canonical_name"].str.strip() == ""
+    df.loc[missing, "canonical_name"] = df.loc[missing, "name"].map(canonical_name)
     return df
 
 
@@ -283,12 +300,13 @@ def _ensure_csv(path: Path, fields: list[str]) -> None:
 
 
 def _migrate_csv_schema(path: Path, fields: list[str]) -> None:
-    """Rewrite the CSV header to match *fields* if the column count has changed.
+    """Rewrite the CSV to match *fields*, remapping existing data by column name.
 
-    Handles forward migrations (columns added). Existing data rows with fewer
-    fields than the new header are left as-is; pandas fills the missing columns
-    with NaN on the next read. Rows that already carry the new fields are
-    unaffected.
+    Columns are matched by name, so this safely handles added, reordered, or
+    removed columns: values for each existing column land in the right place,
+    new columns are written empty, and columns no longer in *fields* are dropped.
+    A purely positional rewrite would silently shift every value when a column is
+    inserted in the middle, so name-based remapping is used instead.
 
     Args:
         path: Path to the CSV file to inspect and potentially rewrite.
@@ -297,16 +315,13 @@ def _migrate_csv_schema(path: Path, fields: list[str]) -> None:
     if not path.exists() or path.stat().st_size == 0:
         return
     with path.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.reader(f)
-        try:
-            existing_header = next(reader)
-        except StopIteration:
-            return
-        if existing_header == fields:
+        reader = csv.DictReader(f)
+        if reader.fieldnames == fields:
             return  # Already current — nothing to do.
         rows = list(reader)
 
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(fields)
-        writer.writerows(rows)
+        writer = csv.DictWriter(f, fieldnames=fields, restval="", extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: (row.get(key) or "") for key in fields})

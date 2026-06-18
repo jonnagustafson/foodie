@@ -18,9 +18,12 @@ import streamlit_authenticator as stauth
 
 from core.analyzer import (
     compute_monthly_summary,
+    compute_price_over_time,
+    compute_price_per_kg,
     compute_spending_by_category,
     compute_summary_metrics,
     compute_top_items,
+    list_trackable_products,
 )
 from core.categories import all_categories, categorize_item, is_receipt_artifact
 from integrations.pdf_parser import parse_ica_receipt
@@ -269,6 +272,58 @@ def _render_upload_page() -> None:
 _TOP_ITEMS_N = 10
 
 
+def _render_price_trends(filtered: pd.DataFrame) -> None:
+    """Render the per-product price-over-time line chart for the filtered data."""
+    st.subheader("Pris över tid")
+    products = list_trackable_products(filtered)
+    if not products:
+        st.caption(
+            "Ingen vara har köpts vid fler än ett tillfälle i intervallet ännu – "
+            "ladda upp fler kvitton för att se pristrender."
+        )
+        return
+
+    product = st.selectbox("Välj vara", products, key="price_trend_product")
+    trend = compute_price_over_time(filtered, product)
+    if trend.empty:
+        return
+
+    fig = px.line(
+        trend,
+        x="date",
+        y="price",
+        markers=True,
+        labels={"date": "Datum", "price": "Pris per enhet (kr)"},
+    )
+    fig.update_layout(margin=dict(t=20, b=20), xaxis_type="category")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_price_per_kg(filtered: pd.DataFrame) -> None:
+    """Render the price-per-kilogram/litre comparison for weight-sold items."""
+    st.subheader("Pris per kg/liter")
+    per_kg = compute_price_per_kg(filtered)
+    if per_kg.empty:
+        st.caption(
+            "Inga vägda varor (kg/liter) i intervallet – pris per kg visas bara "
+            "för varor som säljs efter vikt eller volym."
+        )
+        return
+
+    display = per_kg.assign(
+        label=per_kg["canonical_name"] + " (kr/" + per_kg["unit"] + ")"
+    )
+    fig = px.bar(
+        display.sort_values("avg_price"),
+        x="avg_price",
+        y="label",
+        orientation="h",
+        labels={"avg_price": "Snittpris per enhet (kr)", "label": ""},
+    )
+    fig.update_layout(margin=dict(t=20, b=20))
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def _render_dashboard_page() -> None:
     st.title("Analys & Trender")
 
@@ -365,6 +420,12 @@ def _render_dashboard_page() -> None:
             xaxis_type="category",
         )
         st.plotly_chart(fig, use_container_width=True)
+
+    # --- Price over time ---
+    _render_price_trends(filtered)
+
+    # --- Price per kg/l ---
+    _render_price_per_kg(filtered)
 
     # --- Category editor ---
     with st.expander("Redigera kategorier"):

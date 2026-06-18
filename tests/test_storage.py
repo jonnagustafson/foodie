@@ -116,6 +116,50 @@ def tmp_storage_old_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> P
     return tmp_path
 
 
+@pytest.fixture()
+def tmp_storage_with_extra_columns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Storage seeded with the canonical_name/subcategory columns but no unit.
+
+    Mirrors the real data file's drifted schema to prove the name-based migration
+    keeps values aligned (no positional shifting) when a new column is inserted.
+    """
+    _patch_storage(tmp_path, monkeypatch)
+    drifted_fields = [
+        "id",
+        "receipt_id",
+        "date",
+        "name",
+        "price",
+        "quantity",
+        "category",
+        "deal_name",
+        "deal_discount",
+        "canonical_name",
+        "subcategory",
+    ]
+    with (tmp_path / "items.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=drifted_fields)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "id": "aaaa1111",
+                "receipt_id": "r1",
+                "date": "2026-04-27",
+                "name": "Gul lök ICA",
+                "price": "9.95",
+                "quantity": "1.0",
+                "category": "Grönsaker",
+                "deal_name": "",
+                "deal_discount": "",
+                "canonical_name": "Lök",
+                "subcategory": "Rotfrukter",
+            }
+        )
+    return tmp_path
+
+
 class TestUpdateItemCategory:
     def test_updates_correct_row(self, tmp_storage: Path) -> None:
         update_item_category("aaaa1111", "Fryst")
@@ -197,6 +241,50 @@ class TestSaveReceipt:
         df = storage_module.load_savings()
         assert df.empty
 
+    def test_persists_unit_and_canonical_name(self, tmp_storage: Path) -> None:
+        items = [
+            {
+                "name": "Gul lök ICA",
+                "price": 9.95,
+                "quantity": 1.0,
+                "unit": "st",
+                "deal": None,
+                "category": "Grönsaker",
+            }
+        ]
+        save_receipt(_make_parsed(items=items), "test.pdf")
+        df = storage_module.load_items()
+        row = df[df["name"] == "Gul lök ICA"].iloc[-1]
+        assert row["unit"] == "st"
+        assert row["canonical_name"] == "Lök"
+
+    def test_defaults_unit_when_parser_omits_it(self, tmp_storage: Path) -> None:
+        # Items constructed before the unit field existed must still save.
+        save_receipt(_make_parsed(), "test.pdf")
+        df = storage_module.load_items()
+        assert df.iloc[-1]["unit"] == "st"
+
+
+class TestSchemaMigration:
+    def test_drifted_schema_keeps_values_aligned(
+        self, tmp_storage_with_extra_columns: Path
+    ) -> None:
+        df = storage_module.load_items()
+        row = df[df["id"] == "aaaa1111"].iloc[0]
+        # The inserted unit column must not shift canonical_name/subcategory.
+        assert row["canonical_name"] == "Lök"
+        assert row["subcategory"] == "Rotfrukter"
+        assert row["unit"] == "st"  # new column, back-filled
+        assert row["category"] == "Grönsaker"
+
+    def test_legacy_rows_get_derived_canonical_name(self, tmp_storage: Path) -> None:
+        # tmp_storage has no canonical_name column; it must be derived from name.
+        df = storage_module.load_items()
+        lok = df[df["name"] == "Arla Mjölk"].iloc[0]
+        assert lok["canonical_name"] != ""
+
+
+class TestCsvInjection:
     def test_csv_injection_stripped_from_name(self, tmp_storage: Path) -> None:
         items = [
             {

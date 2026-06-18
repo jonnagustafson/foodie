@@ -63,19 +63,37 @@ _SKIP_RE: re.Pattern[str] = re.compile(
 _PRICE_RE = re.compile(r"(\d[\d\s]*,\d{2})\s*$")
 
 # Quantity line: "2 x 6,45" / "0,456 kg x 199,00 kr/kg" / "3 st x 9,90"
+# Captures the amount and (when present) the selling unit.
 _QTY_LINE_RE = re.compile(
-    r"^(\d+(?:[,.]\d+)?)\s*(?:st|kg|l|liter|pack|fp)?\s*[xX×]", re.IGNORECASE
+    r"^(\d+(?:[,.]\d+)?)\s*(st|kg|l|liter|pack|fp)?\s*[xX×]", re.IGNORECASE
 )
 
 # Leading EAN/article codes: 7+ consecutive digits at the start of a name.
 _LEADING_CODE_RE = re.compile(r"^\d[\d\s]{6,}\s+")
 
 # Embedded ICA receipt detail: " <article_no> <unit_price> <qty> <unit>" before line total.
-# Format: ArticleNumber(5+digits) UnitPrice(Swedish) Quantity(decimal) Unit(st/kg/…)
+# Format: ArticleNumber(4+digits) UnitPrice(Swedish) Quantity(decimal) Unit(st/kg/…).
+# Used both to strip the detail from the name and (via the capturing variant
+# below) to recover the selling unit and quantity when no separate qty line exists.
 _ITEM_DETAIL_RE = re.compile(
-    r"\s+\d{5,}\s+[\d ]+,\d{2}\s+[\d.,]+\s+(?:st|kg|l|liter|pack|fp)\s*$",
+    r"\s+\d{4,}\s+[\d ]+,\d{2}\s+[\d.,]+\s+(?:st|kg|l|liter|pack|fp)\s*$",
     re.IGNORECASE,
 )
+_ITEM_DETAIL_CAPTURE_RE = re.compile(
+    r"\s+\d{4,}\s+[\d ]+,\d{2}\s+(?P<qty>[\d.,]+)\s+(?P<unit>st|kg|l|liter|pack|fp)\s*$",
+    re.IGNORECASE,
+)
+
+# Maps the unit tokens seen on receipts to the canonical units stored downstream.
+# Anything weight/volume based stays distinct; piece-like units collapse to "st".
+_UNIT_NORMALIZE: dict[str, str] = {
+    "st": "st",
+    "kg": "kg",
+    "l": "l",
+    "liter": "l",
+    "pack": "st",
+    "fp": "st",
+}
 
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -93,8 +111,9 @@ def parse_ica_receipt(pdf_path: str | Path) -> dict[str, Any]:
         Dictionary with keys:
             date (str): ISO date string (YYYY-MM-DD).
             store (str): Store name.
-            items (list[dict]): Each item has name, price, quantity, and
-                deal (None or {name, discount} when a club-card deal is active).
+            items (list[dict]): Each item has name, price (unit price),
+                quantity, unit ("st", "kg", or "l"), and deal (None or
+                {name, discount} when a club-card deal is active).
             total (float): Receipt total.
             savings (list[dict]): Cart-level discounts such as storköpsrabatt
                 or lojalitetspoäng. Each entry has name and amount (negative float).
@@ -201,21 +220,46 @@ def _try_parse_item_line(line: str) -> tuple[str, float, bool] | None:
     return pre_price, price, pre_price.startswith("*")
 
 
-def _consume_quantity_line(lines: list[str], i: int) -> tuple[float, int]:
+def _normalize_unit(raw: str | None) -> str:
+    """Map a raw receipt unit token to a canonical unit, defaulting to 'st'."""
+    if not raw:
+        return "st"
+    return _UNIT_NORMALIZE.get(raw.lower(), "st")
+
+
+def _consume_quantity_line(lines: list[str], i: int) -> tuple[float, str | None, int]:
     """Consume lines[i+1] if it is a quantity line.
 
     Returns:
-        (quantity, new_i) — new_i is i+1 if consumed, i otherwise.
+        (quantity, unit, new_i) — unit is the canonical unit from the line, or
+        None if no quantity line was present. new_i is i+1 if consumed, i otherwise.
     """
     if i + 1 < len(lines):
         qty_match = _QTY_LINE_RE.match(lines[i + 1])
         if qty_match:
             raw = qty_match.group(1).replace(",", ".")
             try:
-                return float(raw), i + 1
+                return float(raw), _normalize_unit(qty_match.group(2)), i + 1
             except ValueError:
                 pass
-    return 1.0, i
+    return 1.0, None, i
+
+
+def _unit_from_embedded_detail(name: str) -> tuple[float, str] | None:
+    """Recover (quantity, unit) from an embedded article-detail name, or None.
+
+    Weight-sold items without a separate quantity line carry their amount and
+    unit inside the name (e.g. 'Jordärtskocka 4720 35,00 0,91 kg'). Returns the
+    parsed quantity and canonical unit so kr/kg can be computed downstream.
+    """
+    match = _ITEM_DETAIL_CAPTURE_RE.search(name)
+    if match is None:
+        return None
+    try:
+        quantity = float(match.group("qty").replace(",", "."))
+    except ValueError:
+        return None
+    return quantity, _normalize_unit(match.group("unit"))
 
 
 def _consume_deal_line(lines: list[str], i: int) -> tuple[dict[str, Any] | None, int]:
@@ -261,7 +305,14 @@ def _extract_items(
             continue
 
         name, price, has_deal_marker = item_line
-        quantity, i = _consume_quantity_line(lines, i)
+        quantity, unit, i = _consume_quantity_line(lines, i)
+
+        # When no separate quantity line is present, weight-sold items embed
+        # their amount and unit in the name; recover them so kr/kg is available.
+        if unit is None:
+            embedded = _unit_from_embedded_detail(name)
+            if embedded is not None:
+                quantity, unit = embedded
 
         # The price on the item line is the line total; convert it to a unit
         # price so that price * quantity == line total in all analytics. This
@@ -277,6 +328,7 @@ def _extract_items(
                 "name": _clean_name(name),
                 "price": price,
                 "quantity": quantity,
+                "unit": unit or "st",
                 "deal": deal,
             }
         )
